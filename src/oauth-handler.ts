@@ -6,7 +6,7 @@ import type { GatewayEnv } from './types.js';
 import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
 
 // ── Feature gate: flip to true when ready to accept public signups ──
-const PUBLIC_SIGNUPS_ENABLED = false;
+const PUBLIC_SIGNUPS_ENABLED = true;
 
 // --- Shared styles ---
 
