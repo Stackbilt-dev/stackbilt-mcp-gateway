@@ -7,6 +7,7 @@ import type { GatewayEnv, AuthResult, Tier } from './types.js';
 import { extractBearerToken, validateBearerToken, buildWwwAuthenticate } from './auth.js';
 import { resolveRoute, getToolRiskLevel } from './route-table.js';
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
+import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit } from './audit.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -83,9 +84,24 @@ async function proxyToolCall(
   gatewayToolName: string,
   args: unknown,
   session: GatewaySession,
+  traceId: string,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  const riskLevel = getToolRiskLevel(gatewayToolName) ?? 'UNKNOWN';
+  const auditBase: Omit<AuditArtifact, 'outcome' | 'latency_ms'> = {
+    trace_id: traceId,
+    principal: session.userId ?? 'unknown',
+    tenant: session.tenantId ?? 'unknown',
+    tool: gatewayToolName,
+    risk_level: riskLevel,
+    policy_decision: 'ALLOW',
+    redacted_input_summary: summarizeInput(args),
+    timestamp: new Date().toISOString(),
+  };
+  const start = Date.now();
+
   const resolved = resolveRoute(gatewayToolName);
   if (!resolved) {
+    emitAudit({ ...auditBase, outcome: 'unknown_tool', policy_decision: 'DENY', latency_ms: Date.now() - start });
     return {
       content: [{ type: 'text', text: `Unknown tool: ${gatewayToolName}` }],
       isError: true,
@@ -124,6 +140,7 @@ async function proxyToolCall(
 
     if (!response.ok) {
       const text = await response.text().catch(() => 'unknown error');
+      emitAudit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start });
       return {
         content: [{ type: 'text', text: `Backend error (${route.product}): ${sanitizeError(text).slice(0, 500)}` }],
         isError: true,
@@ -136,6 +153,7 @@ async function proxyToolCall(
     };
 
     if (body.error) {
+      emitAudit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start });
       return {
         content: [{ type: 'text', text: `${route.product} error: ${sanitizeError(body.error.message ?? 'unknown')}` }],
         isError: true,
@@ -143,10 +161,16 @@ async function proxyToolCall(
     }
 
     const fallback = { content: [{ type: 'text' as const, text: 'No result from backend' }], isError: true as const };
-    if (!body.result?.content) return fallback;
+    if (!body.result?.content) {
+      emitAudit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start });
+      return fallback;
+    }
+
+    emitAudit({ ...auditBase, outcome: body.result.isError ? 'error' : 'success', latency_ms: Date.now() - start });
     return { content: body.result.content, isError: body.result.isError };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    emitAudit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start });
     return {
       content: [{ type: 'text', text: `Gateway proxy error: ${sanitizeError(msg)}` }],
       isError: true,
@@ -198,6 +222,17 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
 
   const authResult = await validateBearerToken(token, env.AUTH_SERVICE);
   if (!authResult.authenticated) {
+    emitAudit({
+      trace_id: generateTraceId(),
+      principal: 'unauthenticated',
+      tenant: 'unknown',
+      tool: 'auth',
+      risk_level: 'UNKNOWN',
+      policy_decision: 'DENY',
+      redacted_input_summary: '{}',
+      outcome: 'auth_denied',
+      timestamp: new Date().toISOString(),
+    });
     const status = authResult.error === 'insufficient_scope' ? 403 : 401;
     return jsonResponse(
       { error: authResult.error, code: authResult.error.toUpperCase() },
@@ -267,7 +302,20 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
 
   // ─── tools/call ─────────────────────────────────────────
   if (rpcMethod === 'tools/call') {
+    const traceId = generateTraceId();
+
     if (!params || typeof params['name'] !== 'string') {
+      emitAudit({
+        trace_id: traceId,
+        principal: session.userId ?? 'unknown',
+        tenant: session.tenantId ?? 'unknown',
+        tool: 'unknown',
+        risk_level: 'UNKNOWN',
+        policy_decision: 'DENY',
+        redacted_input_summary: summarizeInput(params),
+        outcome: 'invalid_params',
+        timestamp: new Date().toISOString(),
+      });
       return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, 'params.name is required');
     }
 
@@ -277,16 +325,38 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
     // Security: validate risk level exists
     const risk = getToolRiskLevel(toolName);
     if (!risk) {
+      emitAudit({
+        trace_id: traceId,
+        principal: session.userId ?? 'unknown',
+        tenant: session.tenantId ?? 'unknown',
+        tool: toolName,
+        risk_level: 'UNKNOWN',
+        policy_decision: 'DENY',
+        redacted_input_summary: summarizeInput(toolArgs),
+        outcome: 'unknown_tool',
+        timestamp: new Date().toISOString(),
+      });
       return rpcError(rpcId, JSON_RPC_METHOD_NOT_FOUND, `Unknown tool: ${toolName}`);
     }
 
     // Validate arguments are object-shaped
     const argValidation = validateToolArguments(toolArgs, { type: 'object' });
     if (!argValidation.valid) {
+      emitAudit({
+        trace_id: traceId,
+        principal: session.userId ?? 'unknown',
+        tenant: session.tenantId ?? 'unknown',
+        tool: toolName,
+        risk_level: risk,
+        policy_decision: 'DENY',
+        redacted_input_summary: summarizeInput(toolArgs),
+        outcome: 'invalid_params',
+        timestamp: new Date().toISOString(),
+      });
       return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, argValidation.message);
     }
 
-    const result = await proxyToolCall(env, toolName, toolArgs, session);
+    const result = await proxyToolCall(env, toolName, toolArgs, session, traceId);
     return rpcResult(rpcId, result);
   }
 
