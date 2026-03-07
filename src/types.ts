@@ -91,6 +91,9 @@ export interface GatewayEnv {
   OAUTH_PROVIDER: OAuthHelpers;
   OAUTH_KV: KVNamespace;
 
+  // Secrets
+  SERVICE_BINDING_SECRET: string;
+
   // Config
   API_BASE_URL: string;
 }
