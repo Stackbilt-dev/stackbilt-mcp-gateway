@@ -26,7 +26,7 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     prefix: 'image',
     product: 'img-forge',
     bindingKey: 'IMG_FORGE',
-    mcpPath: '/',
+    mcpPath: '/mcp',
   },
 ] as const;
 

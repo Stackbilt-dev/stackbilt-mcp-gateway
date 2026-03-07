@@ -18,18 +18,17 @@ service = "edge-stack-architect-v2"
 
 [[services]]
 binding = "IMG_FORGE"
-service = "img-forge-gateway"
+service = "img-forge-mcp"
 
 # OAuth KV (shared namespace with img-forge-mcp during transition)
 [[kv_namespaces]]
 binding = "OAUTH_KV"
 id = "2a53015addb24102a71fc0c993715f4b"
 
-# Custom domain — takes over from img-forge-mcp
-# [[routes]]
-# pattern = "mcp.stackbilt.dev"
-# custom_domain = true
-# NOTE: Uncomment after removing custom_domain from img-forge-mcp wrangler.toml
+# Custom domain — taken over from img-forge-mcp (ADR-039)
+[[routes]]
+pattern = "mcp.stackbilt.dev"
+custom_domain = true
 
 [vars]
 API_BASE_URL = "https://mcp.stackbilt.dev"
