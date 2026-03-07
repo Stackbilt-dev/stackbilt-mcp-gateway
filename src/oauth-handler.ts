@@ -276,7 +276,9 @@ export async function verifyIdentityToken(
     false,
     ['verify'],
   );
-  const sigBytes = new Uint8Array(sigHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const hexPairs = sigHex.match(/.{2}/g);
+  if (!hexPairs || sigHex.length % 2 !== 0) return null;
+  const sigBytes = new Uint8Array(hexPairs.map((b) => parseInt(b, 16)));
   const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(data));
   if (!valid) return null;
 
@@ -494,6 +496,11 @@ async function handlePostAuthorize(request: Request, env: GatewayEnv): Promise<R
   }
 
   if (action === 'deny') {
+    // Validate redirect_uri against registered client to prevent open redirect
+    const clientInfo = await env.OAUTH_PROVIDER.lookupClient(oauthReqInfo.clientId);
+    if (!clientInfo) {
+      return Response.json({ error: 'Unknown client' }, { status: 400 });
+    }
     const redirectUrl = new URL(oauthReqInfo.redirectUri);
     redirectUrl.searchParams.set('error', 'access_denied');
     redirectUrl.searchParams.set('error_description', 'User denied the authorization request');
