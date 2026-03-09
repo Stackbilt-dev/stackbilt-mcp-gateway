@@ -1,0 +1,119 @@
+# Stackbilt MCP Gateway
+
+OAuth-authenticated [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) gateway for Stackbilt platform services. Built as a Cloudflare Worker using `@cloudflare/workers-oauth-provider`.
+
+## What It Does
+
+A single MCP endpoint (`mcp.stackbilt.dev/mcp`) that routes tool calls to multiple backend product workers:
+
+| Backend | Tools | Description |
+|---------|-------|-------------|
+| **Stackbilder** | `flow.create`, `flow.status`, `flow.summary`, `flow.quality`, `flow.governance`, `flow.advance`, `flow.recover` | Architecture flow orchestration |
+| **img-forge** | `image.generate`, `image.list_models`, `image.check_job` | AI image generation |
+
+## Key Features
+
+- **OAuth 2.1 with PKCE** — GitHub SSO, Google SSO, and email/password authentication
+- **Backend adapter pattern** — tool catalogs aggregated from multiple service bindings, namespaced to avoid collisions
+- **Security Constitution compliance** — every tool declares a risk level (`READ_ONLY`, `LOCAL_MUTATION`, `EXTERNAL_MUTATION`); structured audit logging with secret redaction; HMAC-signed identity tokens
+- **Coming-soon gate** — `PUBLIC_SIGNUPS_ENABLED` flag to control public access
+- **MCP JSON-RPC over HTTP** — supports both streaming (SSE) and request/response transport
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) (`npm i -g wrangler`)
+- Cloudflare account with the required service bindings configured
+
+### Install & Run
+
+```bash
+npm install
+npm run dev
+```
+
+### Run Tests
+
+```bash
+npm test
+```
+
+### Deploy
+
+```bash
+npm run deploy
+```
+
+Deploys to the `mcp.stackbilt.dev` custom domain via Cloudflare Workers.
+
+## Environment Variables & Secrets
+
+| Name | Type | Description |
+|------|------|-------------|
+| `SERVICE_BINDING_SECRET` | Secret | HMAC-SHA256 key for signing identity tokens |
+| `API_BASE_URL` | Variable | Base URL for OAuth redirects (e.g. `https://mcp.stackbilt.dev`) |
+| `AUTH_SERVICE` | Service Binding | RPC to `stackbilt-auth` worker (`AuthEntrypoint`) |
+| `STACKBILDER` | Service Binding | Route to `edge-stack-architect-v2` worker |
+| `IMG_FORGE` | Service Binding | Route to `img-forge-mcp` worker |
+| `OAUTH_KV` | KV Namespace | Stores social OAuth state (5-min TTL entries) |
+| `PLATFORM_EVENTS_QUEUE` | Queue | BizOps audit event pipeline (`stackbilt-user-events`) |
+
+Set secrets with:
+```bash
+wrangler secret put SERVICE_BINDING_SECRET
+```
+
+## Project Structure
+
+```
+src/
+  index.ts           # Entry point — OAuthProvider setup, CORS, health check bypass
+  gateway.ts         # MCP JSON-RPC transport, session management, tool dispatch
+  oauth-handler.ts   # OAuth 2.1 flows: login, signup, social SSO, consent
+  tool-registry.ts   # Tool catalog aggregation, namespacing, schema validation
+  audit.ts           # Structured audit logging, secret redaction, trace IDs
+  auth.ts            # Bearer token extraction & validation
+  route-table.ts     # Static routing table, tool-to-backend mapping, risk levels
+  types.ts           # Type definitions, RiskLevel enum, interfaces
+
+test/
+  audit.test.ts
+  auth.test.ts
+  gateway.test.ts
+  oauth-handler.test.ts
+  route-table.test.ts
+  tool-registry.test.ts
+
+docs/
+  user-guide.md      # End-user guide: account creation, client setup, tool usage
+  api-reference.md   # MCP tool surface, authentication flow, tool routing
+  architecture.md    # System design, security model, request flow
+```
+
+## Test Suite
+
+122 tests across 6 test files covering:
+
+- **OAuth handler** — identity token signing/verification, login, signup, social OAuth flows, consent, HTML escaping
+- **Gateway** — session lifecycle, `initialize`, `tools/list`, `tools/call`, SSE streaming, error handling
+- **Audit** — secret redaction patterns (API keys, bearer tokens, hex hashes, password fields), trace IDs, queue emission
+- **Auth** — bearer token extraction, API key vs JWT validation, error mapping
+- **Tool registry** — catalog building, name mapping, schema validation, risk level enforcement
+- **Route table** — route resolution, risk level lookup
+
+```bash
+npm test          # single run
+npm run test:watch # watch mode
+```
+
+## Documentation
+
+- [User Guide](docs/user-guide.md) — account creation, client setup, tool usage
+- [API Reference](docs/api-reference.md) — MCP tools, authentication, tool routing
+- [Architecture](docs/architecture.md) — system design, security model, data flow
+
+## License
+
+Proprietary — Stackbilt, Inc.
