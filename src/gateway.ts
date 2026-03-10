@@ -16,7 +16,7 @@ const JSON_RPC_METHOD_NOT_FOUND = -32601;
 const JSON_RPC_INVALID_PARAMS = -32602;
 const JSON_RPC_INTERNAL_ERROR = -32603;
 
-// ─── Session Store ────────────────────────────────────────────
+// ─── Session Store (KV-backed for cross-isolate persistence) ──
 interface GatewaySession {
   id: string;
   tier: Tier;
@@ -27,8 +27,8 @@ interface GatewaySession {
   lastActivity: number;
 }
 
-const sessions = new Map<string, GatewaySession>();
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TTL_SECONDS = 30 * 60; // 30 minutes
+const SESSION_KEY_PREFIX = 'mcp_session:';
 
 function generateSessionId(): string {
   const bytes = new Uint8Array(16);
@@ -36,13 +36,25 @@ function generateSessionId(): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function pruneExpiredSessions(): void {
-  const now = Date.now();
-  for (const [id, session] of sessions) {
-    if (now - session.lastActivity > SESSION_TTL_MS) {
-      sessions.delete(id);
-    }
-  }
+async function getSession(kv: KVNamespace, sessionId: string): Promise<GatewaySession | null> {
+  const raw = await kv.get(`${SESSION_KEY_PREFIX}${sessionId}`);
+  if (!raw) return null;
+  return JSON.parse(raw) as GatewaySession;
+}
+
+async function putSession(kv: KVNamespace, session: GatewaySession): Promise<void> {
+  await kv.put(
+    `${SESSION_KEY_PREFIX}${session.id}`,
+    JSON.stringify(session),
+    { expirationTtl: SESSION_TTL_SECONDS },
+  );
+}
+
+async function deleteSession(kv: KVNamespace, sessionId: string): Promise<boolean> {
+  const exists = await kv.get(`${SESSION_KEY_PREFIX}${sessionId}`);
+  if (!exists) return false;
+  await kv.delete(`${SESSION_KEY_PREFIX}${sessionId}`);
+  return true;
 }
 
 // ─── JSON helpers ─────────────────────────────────────────────
@@ -328,7 +340,7 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
 
   // ─── initialize ─────────────────────────────────────────
   if (rpcMethod === 'initialize') {
-    return handleInitialize(rpcId, params, authResult);
+    return handleInitialize(rpcId, params, authResult, env);
   }
 
   // All other methods require a session
@@ -337,7 +349,7 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
     return rpcError(rpcId, JSON_RPC_INVALID_REQUEST, 'MCP-Session-Id header required');
   }
 
-  const session = sessions.get(sessionId);
+  const session = await getSession(env.OAUTH_KV, sessionId);
   if (!session) {
     return jsonResponse(
       { error: 'Session expired or unknown. Re-initialize.', code: 'SESSION_EXPIRED' },
@@ -345,6 +357,8 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
     );
   }
   session.lastActivity = Date.now();
+  // Fire-and-forget: refresh TTL in KV
+  putSession(env.OAUTH_KV, session).catch(() => {});
 
   // ─── notifications (fire-and-forget) ────────────────────
   if (rpcMethod === 'notifications/initialized') {
@@ -358,7 +372,7 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
 
   // ─── tools/list ─────────────────────────────────────────
   if (rpcMethod === 'tools/list') {
-    pruneExpiredSessions();
+    // KV handles session expiration via expirationTtl — no manual pruning needed
     const tools = buildAggregatedCatalog();
     return rpcResult(rpcId, { tools });
   }
@@ -427,11 +441,12 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
 }
 
 // ─── Initialize ───────────────────────────────────────────────
-function handleInitialize(
+async function handleInitialize(
   rpcId: unknown,
   params: Record<string, unknown> | undefined,
   auth: Extract<AuthResult, { authenticated: true }>,
-): Response {
+  env: GatewayEnv,
+): Promise<Response> {
   const clientInfo = params?.['clientInfo'] as Record<string, unknown> | undefined;
   const protocolVersion = params?.['protocolVersion'] as string | undefined;
 
@@ -448,7 +463,7 @@ function handleInitialize(
     createdAt: Date.now(),
     lastActivity: Date.now(),
   };
-  sessions.set(session.id, session);
+  await putSession(env.OAUTH_KV, session);
 
   return jsonResponse(
     {
@@ -479,8 +494,12 @@ async function handleGet(request: Request, env: GatewayEnv, oauthProps?: OAuthPr
 
   // Validate session
   const sessionId = request.headers.get('MCP-Session-Id');
-  if (!sessionId || !sessions.has(sessionId)) {
+  if (!sessionId) {
     return jsonResponse({ error: 'MCP-Session-Id header required' }, 400);
+  }
+  const sseSession = await getSession(env.OAUTH_KV, sessionId);
+  if (!sseSession) {
+    return jsonResponse({ error: 'Session expired or unknown. Re-initialize.', code: 'SESSION_EXPIRED' }, 404);
   }
 
   // Must accept text/event-stream
@@ -536,7 +555,8 @@ async function handleDelete(request: Request, env: GatewayEnv, oauthProps?: OAut
     return jsonResponse({ error: 'MCP-Session-Id header required' }, 400);
   }
 
-  if (!sessions.delete(sessionId)) {
+  const deleted = await deleteSession(env.OAUTH_KV, sessionId);
+  if (!deleted) {
     return jsonResponse({ error: 'Session not found' }, 404);
   }
 

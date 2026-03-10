@@ -197,7 +197,16 @@ describe('gateway audit integration', () => {
         connect: () => { throw new Error('not implemented'); },
       } as unknown as Fetcher,
       OAUTH_PROVIDER: {} as any,
-      OAUTH_KV: {} as any,
+      OAUTH_KV: (() => {
+        const store = new Map<string, string>();
+        return {
+          get: async (key: string) => store.get(key) ?? null,
+          put: async (key: string, value: string) => { store.set(key, value); },
+          delete: async (key: string) => { store.delete(key); },
+          list: async () => ({ keys: [], list_complete: true, cacheStatus: null }),
+          getWithMetadata: async () => ({ value: null, metadata: null, cacheStatus: null }),
+        } as unknown as KVNamespace;
+      })(),
       PLATFORM_EVENTS_QUEUE: { send: async () => {} } as unknown as Queue,
       SERVICE_BINDING_SECRET: 'test-secret',
       API_BASE_URL: 'https://mcp.stackbilt.dev',

@@ -24,13 +24,24 @@ function mockFetcher(responseBody: unknown = {}, status = 200): Fetcher {
   } as unknown as Fetcher;
 }
 
+function mockKV(): KVNamespace {
+  const store = new Map<string, string>();
+  return {
+    get: async (key: string) => store.get(key) ?? null,
+    put: async (key: string, value: string) => { store.set(key, value); },
+    delete: async (key: string) => { store.delete(key); },
+    list: async () => ({ keys: [], list_complete: true, cacheStatus: null }),
+    getWithMetadata: async () => ({ value: null, metadata: null, cacheStatus: null }),
+  } as unknown as KVNamespace;
+}
+
 function makeEnv(overrides?: Partial<GatewayEnv>): GatewayEnv {
   return {
     AUTH_SERVICE: mockAuthService(),
     STACKBILDER: mockFetcher({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'flow created' }] } }),
     IMG_FORGE: mockFetcher({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'image generated' }] } }),
     OAUTH_PROVIDER: {} as any,
-    OAUTH_KV: {} as any,
+    OAUTH_KV: mockKV(),
     PLATFORM_EVENTS_QUEUE: { send: async () => {} } as unknown as Queue,
     SERVICE_BINDING_SECRET: 'test-secret',
     API_BASE_URL: 'https://mcp.stackbilt.dev',
