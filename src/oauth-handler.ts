@@ -445,13 +445,25 @@ async function handleGetAuthorize(request: Request, env: GatewayEnv): Promise<Re
   if (identityToken) {
     const identity = await verifyIdentityToken(env.SERVICE_BINDING_SECRET, identityToken);
     if (identity) {
-      // Authenticated -- show consent screen
-      const clientInfo = await env.OAUTH_PROVIDER.lookupClient(oauthReqInfo.clientId);
-      const clientName = clientInfo?.clientName || oauthReqInfo.clientId;
-      return new Response(
-        renderConsentPage(clientName, oauthReqInfo.scope, oauthParams, identityToken, identity.email),
-        { headers: { 'Content-Type': 'text/html' } },
-      );
+      // Auto-approve: skip consent screen to reduce OAuth hop count.
+      // The user already authenticated (login/signup/social) and we control
+      // all scopes. Showing a consent page adds latency that can cause
+      // Claude Code's local callback listener to time out.
+      const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+        request: oauthReqInfo,
+        userId: identity.userId,
+        scope: oauthReqInfo.scope,
+        metadata: {
+          authorizedAt: new Date().toISOString(),
+          userEmail: identity.email,
+        },
+        props: {
+          userId: identity.userId,
+          email: identity.email,
+          name: identity.name,
+        },
+      });
+      return Response.redirect(redirectTo, 302);
     }
     // Token invalid/expired -- fall through to login
   }

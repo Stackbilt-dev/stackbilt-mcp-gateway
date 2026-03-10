@@ -88,6 +88,33 @@ describe('buildAggregatedCatalog', () => {
       expect(tool.name).toMatch(/^(flow|image)\./);
     }
   });
+
+  it('every tool has a real description (not placeholder)', () => {
+    const catalog = buildAggregatedCatalog();
+    for (const tool of catalog) {
+      expect(tool.description, `${tool.name} has placeholder description`).not.toContain('Proxied tool');
+      expect(tool.description.length, `${tool.name} description too short`).toBeGreaterThan(20);
+    }
+  });
+
+  it('image.generate has proper inputSchema with prompt', () => {
+    const catalog = buildAggregatedCatalog();
+    const gen = catalog.find(t => t.name === 'image.generate')!;
+    expect(gen).toBeDefined();
+    const props = gen.inputSchema['properties'] as Record<string, unknown>;
+    expect(props['prompt']).toBeDefined();
+    expect(props['quality_tier']).toBeDefined();
+    expect(gen.inputSchema['required']).toContain('prompt');
+  });
+
+  it('flow.create has proper inputSchema with policy', () => {
+    const catalog = buildAggregatedCatalog();
+    const create = catalog.find(t => t.name === 'flow.create')!;
+    expect(create).toBeDefined();
+    const props = create.inputSchema['properties'] as Record<string, unknown>;
+    expect(props['policy']).toBeDefined();
+    expect(create.inputSchema['required']).toContain('policy');
+  });
 });
 
 describe('validateToolArguments', () => {

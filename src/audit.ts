@@ -63,3 +63,29 @@ export function emitAudit(artifact: AuditArtifact): void {
   };
   console.log(`[audit] ${JSON.stringify(safe)}`);
 }
+
+/** Fire-and-forget: push a redacted audit artifact to the BizOps queue as a tool.called event. */
+export function queueAuditEvent(queue: Queue, artifact: AuditArtifact): void {
+  const safe: AuditArtifact = {
+    ...artifact,
+    principal: redact(artifact.principal),
+    tenant: redact(artifact.tenant),
+    redacted_input_summary: redact(artifact.redacted_input_summary),
+  };
+  queue.send({
+    event_type: 'tool.called',
+    event_id: safe.trace_id,
+    trace_id: safe.trace_id,
+    principal: safe.principal,
+    tenant: safe.tenant,
+    tool: safe.tool,
+    risk_level: safe.risk_level,
+    policy_decision: safe.policy_decision,
+    redacted_input_summary: safe.redacted_input_summary,
+    outcome: safe.outcome,
+    latency_ms: safe.latency_ms,
+    timestamp: safe.timestamp,
+  }).catch((err) => {
+    console.error('[audit] Queue emit failed:', err);
+  });
+}

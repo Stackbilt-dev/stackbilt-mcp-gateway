@@ -28,8 +28,10 @@ function addCorsHeaders(response: Response): Response {
 const oauthProvider = new OAuthProvider<GatewayEnv>({
   apiRoute: '/mcp',
   apiHandler: {
-    fetch: async (request: Request, env: GatewayEnv, _ctx: ExecutionContext) => {
-      const response = await handleMcpRequest(request, env);
+    fetch: async (request: Request, env: GatewayEnv, ctx: ExecutionContext) => {
+      // OAuthProvider validates the token and sets ctx.props with { userId, email, name }
+      const oauthProps = (ctx as unknown as { props?: { userId?: string; email?: string; name?: string } }).props;
+      const response = await handleMcpRequest(request, env, oauthProps);
       return addCorsHeaders(response);
     },
   },

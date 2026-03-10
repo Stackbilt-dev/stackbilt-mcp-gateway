@@ -30,5 +30,10 @@ id = "2a53015addb24102a71fc0c993715f4b"
 pattern = "mcp.stackbilt.dev"
 custom_domain = true
 
+# Queue — platform event pipeline into BizOps
+[[queues.producers]]
+binding = "PLATFORM_EVENTS_QUEUE"
+queue = "stackbilt-user-events"
+
 [vars]
 API_BASE_URL = "https://mcp.stackbilt.dev"

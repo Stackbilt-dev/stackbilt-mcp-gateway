@@ -198,6 +198,7 @@ describe('gateway audit integration', () => {
       } as unknown as Fetcher,
       OAUTH_PROVIDER: {} as any,
       OAUTH_KV: {} as any,
+      PLATFORM_EVENTS_QUEUE: { send: async () => {} } as unknown as Queue,
       SERVICE_BINDING_SECRET: 'test-secret',
       API_BASE_URL: 'https://mcp.stackbilt.dev',
       ...overrides,

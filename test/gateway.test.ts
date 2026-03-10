@@ -31,6 +31,7 @@ function makeEnv(overrides?: Partial<GatewayEnv>): GatewayEnv {
     IMG_FORGE: mockFetcher({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'image generated' }] } }),
     OAUTH_PROVIDER: {} as any,
     OAUTH_KV: {} as any,
+    PLATFORM_EVENTS_QUEUE: { send: async () => {} } as unknown as Queue,
     SERVICE_BINDING_SECRET: 'test-secret',
     API_BASE_URL: 'https://mcp.stackbilt.dev',
     ...overrides,

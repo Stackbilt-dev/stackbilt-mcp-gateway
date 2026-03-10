@@ -94,6 +94,7 @@ function makeEnv(overrides?: Partial<GatewayEnv>): GatewayEnv {
     IMG_FORGE: {} as Fetcher,
     OAUTH_PROVIDER: mockOAuthProvider() as unknown as GatewayEnv['OAUTH_PROVIDER'],
     OAUTH_KV: mockKV(),
+    PLATFORM_EVENTS_QUEUE: { send: async () => {} } as unknown as Queue,
     SERVICE_BINDING_SECRET: TEST_SECRET,
     API_BASE_URL: TEST_API_BASE_URL,
     ...overrides,

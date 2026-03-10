@@ -7,7 +7,7 @@ import type { GatewayEnv, AuthResult, Tier } from './types.js';
 import { extractBearerToken, validateBearerToken, buildWwwAuthenticate } from './auth.js';
 import { resolveRoute, getToolRiskLevel } from './route-table.js';
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
-import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit } from './audit.js';
+import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -78,6 +78,12 @@ function sanitizeError(message: string): string {
     .replace(/[a-f0-9]{32,}/gi, '[REDACTED_HASH]');
 }
 
+// ─── Audit helper: log + queue ─────────────────────────────────
+function audit(artifact: AuditArtifact, env: GatewayEnv): void {
+  emitAudit(artifact);
+  queueAuditEvent(env.PLATFORM_EVENTS_QUEUE, artifact);
+}
+
 // ─── Proxy a tool call to a backend worker ────────────────────
 async function proxyToolCall(
   env: GatewayEnv,
@@ -101,7 +107,7 @@ async function proxyToolCall(
 
   const resolved = resolveRoute(gatewayToolName);
   if (!resolved) {
-    emitAudit({ ...auditBase, outcome: 'unknown_tool', policy_decision: 'DENY', latency_ms: Date.now() - start });
+    audit({ ...auditBase, outcome: 'unknown_tool', policy_decision: 'DENY', latency_ms: Date.now() - start }, env);
     return {
       content: [{ type: 'text', text: `Unknown tool: ${gatewayToolName}` }],
       isError: true,
@@ -128,7 +134,7 @@ async function proxyToolCall(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json',
+        Accept: 'application/json, text/event-stream',
         // Pass identity context — backend trusts Service Binding
         'X-Gateway-Tenant-Id': session.tenantId ?? '',
         'X-Gateway-User-Id': session.userId ?? '',
@@ -140,20 +146,38 @@ async function proxyToolCall(
 
     if (!response.ok) {
       const text = await response.text().catch(() => 'unknown error');
-      emitAudit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start });
+      audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
       return {
         content: [{ type: 'text', text: `Backend error (${route.product}): ${sanitizeError(text).slice(0, 500)}` }],
         isError: true,
       };
     }
 
-    const body = await response.json() as {
+    // Backend may respond with JSON or SSE (Streamable HTTP transport).
+    // SSE frames look like: "event: message\ndata: {json}\n\n"
+    const contentType = response.headers.get('Content-Type') ?? '';
+    let body: {
       result?: { content?: Array<{ type: string; text: string }>; isError?: boolean };
       error?: { message?: string };
     };
 
+    if (contentType.includes('text/event-stream')) {
+      const raw = await response.text();
+      const jsonLine = raw.split('\n').find(line => line.startsWith('data: '));
+      if (!jsonLine) {
+        audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
+        return {
+          content: [{ type: 'text', text: `Backend returned empty SSE stream (${route.product})` }],
+          isError: true,
+        };
+      }
+      body = JSON.parse(jsonLine.slice(6));
+    } else {
+      body = await response.json();
+    }
+
     if (body.error) {
-      emitAudit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start });
+      audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
       return {
         content: [{ type: 'text', text: `${route.product} error: ${sanitizeError(body.error.message ?? 'unknown')}` }],
         isError: true,
@@ -162,15 +186,15 @@ async function proxyToolCall(
 
     const fallback = { content: [{ type: 'text' as const, text: 'No result from backend' }], isError: true as const };
     if (!body.result?.content) {
-      emitAudit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start });
+      audit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start }, env);
       return fallback;
     }
 
-    emitAudit({ ...auditBase, outcome: body.result.isError ? 'error' : 'success', latency_ms: Date.now() - start });
+    audit({ ...auditBase, outcome: body.result.isError ? 'error' : 'success', latency_ms: Date.now() - start }, env);
     return { content: body.result.content, isError: body.result.isError };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    emitAudit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start });
+    audit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start }, env);
     return {
       content: [{ type: 'text', text: `Gateway proxy error: ${sanitizeError(msg)}` }],
       isError: true,
@@ -178,10 +202,18 @@ async function proxyToolCall(
   }
 }
 
+// ─── OAuth props from OAuthProvider ───────────────────────────
+export interface OAuthProps {
+  userId?: string;
+  email?: string;
+  name?: string;
+}
+
 // ─── Main request handler ─────────────────────────────────────
 export async function handleMcpRequest(
   request: Request,
   env: GatewayEnv,
+  oauthProps?: OAuthProps,
 ): Promise<Response> {
   const method = request.method.toUpperCase();
 
@@ -192,37 +224,68 @@ export async function handleMcpRequest(
 
   // DELETE — session termination
   if (method === 'DELETE') {
-    return handleDelete(request, env);
+    return handleDelete(request, env, oauthProps);
   }
 
-  // GET — SSE streams (not supported in Phase 1)
+  // GET — SSE stream for server-initiated messages
   if (method === 'GET') {
-    return handleGet(request, env);
+    return handleGet(request, env, oauthProps);
   }
 
   // POST — main JSON-RPC flow
   if (method === 'POST') {
-    return handlePost(request, env);
+    return handlePost(request, env, oauthProps);
   }
 
   return jsonResponse({ error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' }, 405);
 }
 
-// ─── POST handler ─────────────────────────────────────────────
-async function handlePost(request: Request, env: GatewayEnv): Promise<Response> {
-  // Auth
-  const token = extractBearerToken(request);
-  if (!token) {
-    return jsonResponse(
-      { error: 'Authentication required', code: 'MISSING_AUTH' },
-      401,
-      { 'WWW-Authenticate': buildWwwAuthenticate() },
-    );
+// ─── Resolve auth: OAuth props (from OAuthProvider) or Bearer token (API keys/JWTs) ──
+async function resolveAuth(
+  request: Request,
+  env: GatewayEnv,
+  oauthProps?: OAuthProps,
+): Promise<AuthResult> {
+  // If OAuthProvider already validated the token, use its props
+  if (oauthProps?.userId) {
+    // Resolve tenant info from AUTH_SERVICE for proper tier/scopes
+    try {
+      const tenant = await env.AUTH_SERVICE.provisionTenant({
+        userId: oauthProps.userId,
+        source: 'oauth',
+      });
+      return {
+        authenticated: true,
+        userId: oauthProps.userId,
+        tenantId: tenant.tenantId,
+        tier: (tenant.tier ?? 'free') as Tier,
+        scopes: ['generate', 'read'],
+      };
+    } catch {
+      // Fallback: if tenant resolution fails, still authenticate with defaults
+      return {
+        authenticated: true,
+        userId: oauthProps.userId,
+        tier: 'free' as Tier,
+        scopes: ['generate', 'read'],
+      };
+    }
   }
 
-  const authResult = await validateBearerToken(token, env.AUTH_SERVICE);
+  // No OAuth props — fall back to Bearer token validation (API keys, JWTs)
+  const token = extractBearerToken(request);
+  if (!token) {
+    return { authenticated: false, error: 'invalid_token' };
+  }
+  return validateBearerToken(token, env.AUTH_SERVICE);
+}
+
+// ─── POST handler ─────────────────────────────────────────────
+async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthProps): Promise<Response> {
+  // Auth
+  const authResult = await resolveAuth(request, env, oauthProps);
   if (!authResult.authenticated) {
-    emitAudit({
+    audit({
       trace_id: generateTraceId(),
       principal: 'unauthenticated',
       tenant: 'unknown',
@@ -232,7 +295,7 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
       redacted_input_summary: '{}',
       outcome: 'auth_denied',
       timestamp: new Date().toISOString(),
-    });
+    }, env);
     const status = authResult.error === 'insufficient_scope' ? 403 : 401;
     return jsonResponse(
       { error: authResult.error, code: authResult.error.toUpperCase() },
@@ -305,7 +368,7 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
     const traceId = generateTraceId();
 
     if (!params || typeof params['name'] !== 'string') {
-      emitAudit({
+      audit({
         trace_id: traceId,
         principal: session.userId ?? 'unknown',
         tenant: session.tenantId ?? 'unknown',
@@ -315,7 +378,7 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
         redacted_input_summary: summarizeInput(params),
         outcome: 'invalid_params',
         timestamp: new Date().toISOString(),
-      });
+      }, env);
       return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, 'params.name is required');
     }
 
@@ -325,7 +388,7 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
     // Security: validate risk level exists
     const risk = getToolRiskLevel(toolName);
     if (!risk) {
-      emitAudit({
+      audit({
         trace_id: traceId,
         principal: session.userId ?? 'unknown',
         tenant: session.tenantId ?? 'unknown',
@@ -335,14 +398,14 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
         redacted_input_summary: summarizeInput(toolArgs),
         outcome: 'unknown_tool',
         timestamp: new Date().toISOString(),
-      });
+      }, env);
       return rpcError(rpcId, JSON_RPC_METHOD_NOT_FOUND, `Unknown tool: ${toolName}`);
     }
 
     // Validate arguments are object-shaped
     const argValidation = validateToolArguments(toolArgs, { type: 'object' });
     if (!argValidation.valid) {
-      emitAudit({
+      audit({
         trace_id: traceId,
         principal: session.userId ?? 'unknown',
         tenant: session.tenantId ?? 'unknown',
@@ -352,7 +415,7 @@ async function handlePost(request: Request, env: GatewayEnv): Promise<Response> 
         redacted_input_summary: summarizeInput(toolArgs),
         outcome: 'invalid_params',
         timestamp: new Date().toISOString(),
-      });
+      }, env);
       return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, argValidation.message);
     }
 
@@ -407,33 +470,63 @@ function handleInitialize(
   );
 }
 
-// ─── GET (SSE — Phase 1: not supported) ──────────────────────
-async function handleGet(request: Request, env: GatewayEnv): Promise<Response> {
-  const token = extractBearerToken(request);
-  if (!token) {
-    return jsonResponse(
-      { error: 'Authentication required' },
-      401,
-      { 'WWW-Authenticate': buildWwwAuthenticate() },
-    );
-  }
-
-  const authResult = await validateBearerToken(token, env.AUTH_SERVICE);
+// ─── GET (SSE stream for server-initiated messages) ──────────
+async function handleGet(request: Request, env: GatewayEnv, oauthProps?: OAuthProps): Promise<Response> {
+  const authResult = await resolveAuth(request, env, oauthProps);
   if (!authResult.authenticated) {
     return jsonResponse({ error: authResult.error }, 401, { 'WWW-Authenticate': buildWwwAuthenticate() });
   }
 
-  return jsonResponse({ error: 'Server-initiated streams not supported in Phase 1' }, 405);
+  // Validate session
+  const sessionId = request.headers.get('MCP-Session-Id');
+  if (!sessionId || !sessions.has(sessionId)) {
+    return jsonResponse({ error: 'MCP-Session-Id header required' }, 400);
+  }
+
+  // Must accept text/event-stream
+  const accept = request.headers.get('Accept') ?? '';
+  if (!accept.includes('text/event-stream')) {
+    return jsonResponse({ error: 'Accept header must include text/event-stream' }, 406);
+  }
+
+  // Open an SSE stream. We don't push server-initiated messages yet,
+  // but the stream must stay open for the MCP transport to be valid.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  // Send an initial comment to confirm the stream is alive
+  writer.write(encoder.encode(': stream opened\n\n'));
+
+  // Keep-alive: send a comment every 30s so proxies/browsers don't close the connection
+  const keepAlive = setInterval(async () => {
+    try {
+      await writer.write(encoder.encode(': keep-alive\n\n'));
+    } catch {
+      clearInterval(keepAlive);
+    }
+  }, 30_000);
+
+  // Clean up when the client disconnects
+  request.signal.addEventListener('abort', () => {
+    clearInterval(keepAlive);
+    writer.close().catch(() => {});
+  });
+
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'MCP-Session-Id': sessionId,
+    },
+  });
 }
 
 // ─── DELETE (session termination) ─────────────────────────────
-async function handleDelete(request: Request, env: GatewayEnv): Promise<Response> {
-  const token = extractBearerToken(request);
-  if (!token) {
-    return jsonResponse({ error: 'Authentication required' }, 401, { 'WWW-Authenticate': buildWwwAuthenticate() });
-  }
-
-  const authResult = await validateBearerToken(token, env.AUTH_SERVICE);
+async function handleDelete(request: Request, env: GatewayEnv, oauthProps?: OAuthProps): Promise<Response> {
+  const authResult = await resolveAuth(request, env, oauthProps);
   if (!authResult.authenticated) {
     return jsonResponse({ error: authResult.error }, 401);
   }

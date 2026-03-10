@@ -94,6 +94,9 @@ export interface GatewayEnv {
   // Secrets
   SERVICE_BINDING_SECRET: string;
 
+  // Queue — platform events pipeline
+  PLATFORM_EVENTS_QUEUE: Queue;
+
   // Config
   API_BASE_URL: string;
 }
