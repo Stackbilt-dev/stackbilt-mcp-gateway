@@ -5,7 +5,7 @@
 
 import type { GatewayEnv, AuthResult, Tier } from './types.js';
 import { extractBearerToken, validateBearerToken, buildWwwAuthenticate } from './auth.js';
-import { resolveRoute, getToolRiskLevel } from './route-table.js';
+import { resolveRoute, getToolRiskLevel, ROUTE_TABLE } from './route-table.js';
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
 import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
 
@@ -465,6 +465,29 @@ async function handleInitialize(
   };
   await putSession(env.OAUTH_KV, session);
 
+  // Build product availability from route table
+  const products = ROUTE_TABLE.map(r => ({
+    name: r.product,
+    prefix: r.prefix,
+    status: 'available',
+  }));
+
+  // Build tool summary with risk levels so agents know what's available
+  // without needing a separate tools/list round trip
+  const catalog = buildAggregatedCatalog();
+  const toolSummary = catalog.map(t => ({
+    name: t.name,
+    riskLevel: t.annotations.riskLevel,
+    readOnly: t.annotations.readOnlyHint,
+  }));
+
+  // Tier-based quota hints
+  const quotaHints: Record<Tier, { credits: number; note: string }> = {
+    free: { credits: 50, note: '50 credits/mo. image.generate costs 1-20 credits depending on tier.' },
+    pro: { credits: 500, note: '500 credits/mo. All quality tiers available.' },
+    enterprise: { credits: 2000, note: '2000 credits/mo. Priority execution.' },
+  };
+
   return jsonResponse(
     {
       jsonrpc: '2.0',
@@ -476,7 +499,23 @@ async function handleInitialize(
         },
         serverInfo: {
           name: 'stackbilt-mcp-gateway',
-          version: '0.1.0',
+          version: '0.2.0',
+          metadata: {
+            products,
+            toolSummary,
+            session: {
+              tier: session.tier,
+              scopes: session.scopes,
+              ttlSeconds: SESSION_TTL_SECONDS,
+              quota: quotaHints[session.tier],
+            },
+            riskLevels: {
+              READ_ONLY: 'No side effects, safe to call freely',
+              LOCAL_MUTATION: 'Creates/modifies resources within Stackbilt',
+              EXTERNAL_MUTATION: 'Triggers external API calls (e.g. image generation)',
+              DESTRUCTIVE: 'Irreversible action — confirm before calling',
+            },
+          },
         },
       },
     },
