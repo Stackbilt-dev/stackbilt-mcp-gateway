@@ -135,10 +135,13 @@ describe('handleMcpRequest', () => {
       expect(body.error.code).toBe(-32600); // INVALID_REQUEST
     });
 
-    it('returns 404 for unknown session ID', async () => {
+    it('auto-recovers unknown session ID when auth is valid', async () => {
       const req = rpcRequest('tools/list', undefined, { 'MCP-Session-Id': 'nonexistent' });
       const res = await handleMcpRequest(req, makeEnv());
-      expect(res.status).toBe(404);
+      // Session auto-recovery: valid auth + stale session = new session created
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.result.tools).toBeTruthy();
     });
   });
 
@@ -331,10 +334,10 @@ describe('handleMcpRequest', () => {
       const deleteRes = await handleMcpRequest(deleteReq, env);
       expect(deleteRes.status).toBe(200);
 
-      // Session should be gone now
+      // Session was deleted — next request auto-recovers a new session
       const listReq = rpcRequest('tools/list', undefined, { 'MCP-Session-Id': sessionId });
       const listRes = await handleMcpRequest(listReq, env);
-      expect(listRes.status).toBe(404);
+      expect(listRes.status).toBe(200);
     });
   });
 });

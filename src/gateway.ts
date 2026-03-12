@@ -57,6 +57,28 @@ async function deleteSession(kv: KVNamespace, sessionId: string): Promise<boolea
   return true;
 }
 
+// ─── Session recovery ─────────────────────────────────────────
+// If a session is expired/missing but auth is valid, rebuild it
+// so clients that don't handle 404 → re-initialize still work.
+async function recoverSession(
+  kv: KVNamespace,
+  sessionId: string,
+  auth: Extract<AuthResult, { authenticated: true }>,
+): Promise<GatewaySession> {
+  const session: GatewaySession = {
+    id: sessionId,
+    tier: auth.tier,
+    scopes: auth.scopes,
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    createdAt: Date.now(),
+    lastActivity: Date.now(),
+  };
+  await putSession(kv, session);
+  console.log(`[gateway] Session auto-recovered for ${auth.userId ?? 'unknown'} (id: ${sessionId})`);
+  return session;
+}
+
 // ─── JSON helpers ─────────────────────────────────────────────
 function jsonResponse(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -349,16 +371,14 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
     return rpcError(rpcId, JSON_RPC_INVALID_REQUEST, 'MCP-Session-Id header required');
   }
 
-  const session = await getSession(env.OAUTH_KV, sessionId);
+  let session = await getSession(env.OAUTH_KV, sessionId);
   if (!session) {
-    return jsonResponse(
-      { error: 'Session expired or unknown. Re-initialize.', code: 'SESSION_EXPIRED' },
-      404,
-    );
+    session = await recoverSession(env.OAUTH_KV, sessionId, authResult);
+  } else {
+    session.lastActivity = Date.now();
+    // Fire-and-forget: refresh TTL in KV
+    putSession(env.OAUTH_KV, session).catch(() => {});
   }
-  session.lastActivity = Date.now();
-  // Fire-and-forget: refresh TTL in KV
-  putSession(env.OAUTH_KV, session).catch(() => {});
 
   // ─── notifications (fire-and-forget) ────────────────────
   if (rpcMethod === 'notifications/initialized') {
@@ -531,14 +551,14 @@ async function handleGet(request: Request, env: GatewayEnv, oauthProps?: OAuthPr
     return jsonResponse({ error: authResult.error }, 401, { 'WWW-Authenticate': buildWwwAuthenticate() });
   }
 
-  // Validate session
+  // Validate session (auto-recover if expired)
   const sessionId = request.headers.get('MCP-Session-Id');
   if (!sessionId) {
     return jsonResponse({ error: 'MCP-Session-Id header required' }, 400);
   }
-  const sseSession = await getSession(env.OAUTH_KV, sessionId);
+  let sseSession = await getSession(env.OAUTH_KV, sessionId);
   if (!sseSession) {
-    return jsonResponse({ error: 'Session expired or unknown. Re-initialize.', code: 'SESSION_EXPIRED' }, 404);
+    sseSession = await recoverSession(env.OAUTH_KV, sessionId, authResult);
   }
 
   // Must accept text/event-stream
