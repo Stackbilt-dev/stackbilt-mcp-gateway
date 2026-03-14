@@ -176,6 +176,7 @@ async function proxyToolCall(
         'X-Gateway-Scopes': session.scopes.join(','),
       },
       body: JSON.stringify(rpcBody),
+      signal: AbortSignal.timeout(10_000),
     }));
 
     if (!response.ok) {
@@ -205,7 +206,15 @@ async function proxyToolCall(
           isError: true,
         };
       }
-      body = JSON.parse(jsonLine.slice(6));
+      try {
+        body = JSON.parse(jsonLine.slice(6));
+      } catch {
+        audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
+        return {
+          content: [{ type: 'text', text: `Backend returned malformed SSE data (${route.product})` }],
+          isError: true,
+        };
+      }
     } else {
       body = await response.json();
     }
@@ -227,6 +236,13 @@ async function proxyToolCall(
     audit({ ...auditBase, outcome: body.result.isError ? 'error' : 'success', latency_ms: Date.now() - start }, env);
     return { content: body.result.content, isError: body.result.isError };
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
+      return {
+        content: [{ type: 'text', text: `Backend timeout (${route.product})` }],
+        isError: true,
+      };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     audit({ ...auditBase, outcome: 'error', latency_ms: Date.now() - start }, env);
     return {
