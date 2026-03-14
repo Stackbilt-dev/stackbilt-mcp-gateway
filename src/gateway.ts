@@ -503,9 +503,10 @@ async function handleInitialize(
 
   // Tier-based quota hints
   const quotaHints: Record<Tier, { credits: number; note: string }> = {
-    free: { credits: 50, note: '50 credits/mo. image.generate costs 1-20 credits depending on tier.' },
-    pro: { credits: 500, note: '500 credits/mo. All quality tiers available.' },
-    enterprise: { credits: 2000, note: '2000 credits/mo. Priority execution.' },
+    free: { credits: 25, note: '25 credits/mo. image_generate costs 1-20 credits depending on quality tier.' },
+    hobby: { credits: 65, note: '65 credits/mo. Draft + standard quality tiers.' },
+    pro: { credits: 580, note: '580 credits/mo. All quality tiers available.' },
+    enterprise: { credits: 2320, note: '2320 credits/mo. Priority execution.' },
   };
 
   return jsonResponse(

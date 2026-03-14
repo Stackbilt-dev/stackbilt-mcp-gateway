@@ -73,7 +73,7 @@ export interface BackendToolResult {
 }
 
 // ─── Tier ─────────────────────────────────────────────────────
-export type Tier = 'free' | 'pro' | 'enterprise';
+export type Tier = 'free' | 'hobby' | 'pro' | 'enterprise';
 
 // ─── Auth result ──────────────────────────────────────────────
 export type AuthResult =
