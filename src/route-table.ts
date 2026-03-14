@@ -35,33 +35,31 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
 // tools that aren't in this map at discovery time.
 export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   // Stackbilder tools
-  'flow.create': 'LOCAL_MUTATION',
-  'flow.status': 'READ_ONLY',
-  'flow.summary': 'READ_ONLY',
-  'flow.quality': 'READ_ONLY',
-  'flow.governance': 'READ_ONLY',
-  'flow.advance': 'LOCAL_MUTATION',
-  'flow.recover': 'LOCAL_MUTATION',
+  'flow_create': 'LOCAL_MUTATION',
+  'flow_status': 'READ_ONLY',
+  'flow_summary': 'READ_ONLY',
+  'flow_quality': 'READ_ONLY',
+  'flow_governance': 'READ_ONLY',
+  'flow_advance': 'LOCAL_MUTATION',
+  'flow_recover': 'LOCAL_MUTATION',
 
   // img-forge tools
-  'image.generate': 'EXTERNAL_MUTATION',
-  'image.list_models': 'READ_ONLY',
-  'image.check_job': 'READ_ONLY',
+  'image_generate': 'EXTERNAL_MUTATION',
+  'image_list_models': 'READ_ONLY',
+  'image_check_job': 'READ_ONLY',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */
 export function resolveRoute(toolName: string): { route: BackendRoute; backendToolName: string } | null {
-  const dotIndex = toolName.indexOf('.');
-  if (dotIndex === -1) return null;
-
-  const prefix = toolName.slice(0, dotIndex);
-  const route = ROUTE_TABLE.find(r => r.prefix === prefix);
-  if (!route) return null;
-
-  // Strip the gateway prefix to get the backend's native tool name
-  // e.g. "image.generate" → "generate_image" mapping handled per-backend
-  const backendToolName = toolName.slice(dotIndex + 1);
-  return { route, backendToolName };
+  // Match against known prefixes (e.g. "flow_create" → prefix "flow", remainder "create")
+  for (const route of ROUTE_TABLE) {
+    const prefixWithSep = route.prefix + '_';
+    if (toolName.startsWith(prefixWithSep)) {
+      const backendToolName = toolName.slice(prefixWithSep.length);
+      return { route, backendToolName };
+    }
+  }
+  return null;
 }
 
 /** Get risk level for a gateway-namespaced tool name */

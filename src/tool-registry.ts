@@ -26,18 +26,18 @@ export interface GatewayToolDefinition {
 // ─── Backend tool name → gateway name mapping ─────────────────
 const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
   image: {
-    generate_image: 'image.generate',
-    list_models: 'image.list_models',
-    check_job: 'image.check_job',
+    generate_image: 'image_generate',
+    list_models: 'image_list_models',
+    check_job: 'image_check_job',
   },
   flow: {
-    'flow.create': 'flow.create',
-    'flow.status': 'flow.status',
-    'flow.summary': 'flow.summary',
-    'flow.quality': 'flow.quality',
-    'flow.governance': 'flow.governance',
-    'flow.advance': 'flow.advance',
-    'flow.recover': 'flow.recover',
+    'flow_create': 'flow_create',
+    'flow_status': 'flow_status',
+    'flow_summary': 'flow_summary',
+    'flow_quality': 'flow_quality',
+    'flow_governance': 'flow_governance',
+    'flow_advance': 'flow_advance',
+    'flow_recover': 'flow_recover',
   },
 };
 
@@ -77,9 +77,9 @@ interface ToolSpec {
 }
 
 const TOOL_SPECS: ToolSpec[] = [
-  // ── Stackbilder (flow.*) ──────────────────────────────────
+  // ── Stackbilder (flow_*) ──────────────────────────────────
   {
-    gatewayName: 'flow.create',
+    gatewayName: 'flow_create',
     description: 'Create a new orchestration flow with an execution policy.',
     inputSchema: {
       type: 'object',
@@ -93,7 +93,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.status',
+    gatewayName: 'flow_status',
     description: 'Get current flow status with progress and estimated remaining time.',
     inputSchema: {
       type: 'object',
@@ -104,7 +104,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.summary',
+    gatewayName: 'flow_summary',
     description: 'Get full flow summary including modes, tokens, quality, and artifacts.',
     inputSchema: {
       type: 'object',
@@ -115,7 +115,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.quality',
+    gatewayName: 'flow_quality',
     description: 'Get per-mode quality scores with local and fused assessments.',
     inputSchema: {
       type: 'object',
@@ -126,7 +126,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.governance',
+    gatewayName: 'flow_governance',
     description: 'Get governance posture including effective mode, capping, and determinism profile.',
     inputSchema: {
       type: 'object',
@@ -137,7 +137,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.advance',
+    gatewayName: 'flow_advance',
     description: 'Advance a flow to its next operating mode.',
     inputSchema: {
       type: 'object',
@@ -148,7 +148,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'flow.recover',
+    gatewayName: 'flow_recover',
     description: 'Recover a failed flow, resuming from the failed mode.',
     inputSchema: {
       type: 'object',
@@ -159,9 +159,9 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
 
-  // ── img-forge (image.*) ───────────────────────────────────
+  // ── img-forge (image_*) ───────────────────────────────────
   {
-    gatewayName: 'image.generate',
+    gatewayName: 'image_generate',
     description:
       'Generate an image from a text prompt. Returns a URL to the generated image ' +
       'and metadata about how the prompt was enhanced. Supports 5 quality tiers: ' +
@@ -196,7 +196,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'image.list_models',
+    gatewayName: 'image_list_models',
     description: 'List all available image generation models and their quality tiers.',
     inputSchema: {
       type: 'object',
@@ -204,7 +204,7 @@ const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
-    gatewayName: 'image.check_job',
+    gatewayName: 'image_check_job',
     description: 'Check the status of an image generation job by its ID. Use this to poll async jobs or verify completed generations.',
     inputSchema: {
       type: 'object',
