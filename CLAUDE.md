@@ -34,7 +34,7 @@ npm run deploy       # wrangler deploy
 | `AUTH_SERVICE` | Service | `stackbilt-auth` (entrypoint: `AuthEntrypoint`) |
 | `STACKBILDER` | Service | `edge-stack-architect-v2` |
 | `IMG_FORGE` | Service | `img-forge-mcp` |
-| `OAUTH_KV` | KV Namespace | `2a53015addb24102a71fc0c993715f4b` |
+| `OAUTH_KV` | KV Namespace | *(see wrangler.toml)* |
 | `PLATFORM_EVENTS_QUEUE` | Queue | `stackbilt-user-events` |
 
 ## Vars
