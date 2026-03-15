@@ -237,7 +237,15 @@ async function proxyToolCall(
         };
       }
     } else {
-      body = await response.json();
+      try {
+        body = await response.json();
+      } catch {
+        audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
+        return {
+          content: [{ type: 'text', text: `Backend returned malformed JSON (${route.product})` }],
+          isError: true,
+        };
+      }
     }
 
     if (body.error) {
