@@ -126,4 +126,4 @@ npm run test:watch # watch mode
 
 ## License
 
-Proprietary — Stackbilt, Inc.
+MIT — see [LICENSE](LICENSE)
