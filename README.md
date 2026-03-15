@@ -1,7 +1,7 @@
 # Stackbilt MCP Gateway
 
 <p align="center">
-  <img src="docs/banner.png" alt="Stackbilt MCP Gateway — img-forge + Stackbilder" width="600" />
+  <img src="docs/banner.png" alt="Stackbilt MCP Gateway — img-forge + Stackbilder" width="480" />
 </p>
 
 <p align="center">
