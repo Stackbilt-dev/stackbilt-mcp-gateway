@@ -118,6 +118,27 @@ function audit(artifact: AuditArtifact, env: GatewayEnv): void {
   queueAuditEvent(env.PLATFORM_EVENTS_QUEUE, artifact);
 }
 
+// ─── Tier-based access control ─────────────────────────────────
+// Restrict expensive quality tiers to users whose plan covers them.
+const TIER_ALLOWED_QUALITY: Record<Tier, Set<string>> = {
+  free:       new Set(['draft', 'standard']),
+  hobby:      new Set(['draft', 'standard']),
+  pro:        new Set(['draft', 'standard', 'premium', 'ultra', 'ultra_plus']),
+  enterprise: new Set(['draft', 'standard', 'premium', 'ultra', 'ultra_plus']),
+};
+
+function enforceTierRestriction(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  tier: Tier,
+): string | null {
+  if (toolName !== 'image_generate') return null;
+  const qualityTier = (args?.quality_tier as string) ?? 'standard';
+  const allowed = TIER_ALLOWED_QUALITY[tier];
+  if (!allowed || allowed.has(qualityTier)) return null;
+  return `Quality tier "${qualityTier}" requires a Pro plan or higher. Your current plan: ${tier}. Available tiers: ${[...allowed].join(', ')}.`;
+}
+
 // ─── Proxy a tool call to a backend worker ────────────────────
 async function proxyToolCall(
   env: GatewayEnv,
@@ -233,8 +254,29 @@ async function proxyToolCall(
       return fallback;
     }
 
+    // Sanitize response: strip raw prompts from metadata to prevent injection echo (#5)
+    const sanitizedContent = body.result.content.map(block => {
+      if (block.type === 'text' && block.text) {
+        // Redact raw prompt content from structured response metadata
+        let text = block.text;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') {
+            delete parsed.original_prompt;
+            delete parsed.final_prompt;
+            delete parsed.enhancement_logic;
+            text = JSON.stringify(parsed, null, 2);
+          }
+        } catch {
+          // Not JSON — pass through
+        }
+        return { ...block, text };
+      }
+      return block;
+    });
+
     audit({ ...auditBase, outcome: body.result.isError ? 'error' : 'success', latency_ms: Date.now() - start }, env);
-    return { content: body.result.content, isError: body.result.isError };
+    return { content: sanitizedContent, isError: body.result.isError };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError') {
       audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
@@ -467,6 +509,23 @@ async function handlePost(request: Request, env: GatewayEnv, oauthProps?: OAuthP
         timestamp: new Date().toISOString(),
       }, env);
       return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, argValidation.message);
+    }
+
+    // Tier-based access control: restrict expensive tiers to paying users
+    const tierDenied = enforceTierRestriction(toolName, toolArgs as Record<string, unknown> | undefined, session.tier);
+    if (tierDenied) {
+      audit({
+        trace_id: traceId,
+        principal: session.userId ?? 'unknown',
+        tenant: session.tenantId ?? 'unknown',
+        tool: toolName,
+        risk_level: risk,
+        policy_decision: 'DENY',
+        redacted_input_summary: summarizeInput(toolArgs),
+        outcome: 'tier_denied',
+        timestamp: new Date().toISOString(),
+      }, env);
+      return rpcError(rpcId, JSON_RPC_INVALID_PARAMS, tierDenied);
     }
 
     const result = await proxyToolCall(env, toolName, toolArgs, session, traceId);

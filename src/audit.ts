@@ -12,7 +12,7 @@ export interface AuditArtifact {
   risk_level: RiskLevel | 'UNKNOWN';
   policy_decision: 'ALLOW' | 'DENY';
   redacted_input_summary: string;
-  outcome: 'success' | 'error' | 'backend_error' | 'auth_denied' | 'unknown_tool' | 'invalid_params';
+  outcome: 'success' | 'error' | 'backend_error' | 'auth_denied' | 'unknown_tool' | 'invalid_params' | 'tier_denied';
   timestamp: string;
   latency_ms?: number;
 }
