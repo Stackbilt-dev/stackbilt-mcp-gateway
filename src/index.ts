@@ -59,6 +59,14 @@ export default {
       return addCorsHeaders(response);
     }
 
+    // MCP Registry domain verification
+    if (url.pathname === '/.well-known/mcp-registry-auth') {
+      return addCorsHeaders(new Response(env.MCP_REGISTRY_AUTH ?? '', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }));
+    }
+
     return oauthProvider.fetch(request, env, ctx);
   },
 };

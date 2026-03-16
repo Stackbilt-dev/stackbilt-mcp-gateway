@@ -10,6 +10,8 @@
 
 [![Stackbilt MCP server](https://glama.ai/mcp/servers/Stackbilt-dev/stackbilt-mcp-gateway/badges/card.svg)](https://glama.ai/mcp/servers/Stackbilt-dev/stackbilt-mcp-gateway)
 
+> **MCP Registry**: [`dev.stackbilt.mcp/gateway`](https://registry.modelcontextprotocol.io/v0.1/servers?search=stackbilt) — published on the [Official MCP Registry](https://modelcontextprotocol.io/registry/quickstart)
+
 OAuth-authenticated [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) gateway for Stackbilt platform services. Built as a Cloudflare Worker using `@cloudflare/workers-oauth-provider`.
 
 ## What It Does
@@ -69,6 +71,7 @@ Deploys to the `mcp.stackbilt.dev` custom domain via Cloudflare Workers.
 | `IMG_FORGE` | Service Binding | Route to `img-forge-mcp` worker |
 | `OAUTH_KV` | KV Namespace | Stores social OAuth state (5-min TTL entries) |
 | `PLATFORM_EVENTS_QUEUE` | Queue | BizOps audit event pipeline (`stackbilt-user-events`) |
+| `MCP_REGISTRY_AUTH` | Variable | MCP Registry domain verification string (served at `/.well-known/mcp-registry-auth`) |
 
 Set secrets with:
 ```bash
@@ -79,7 +82,7 @@ wrangler secret put SERVICE_BINDING_SECRET
 
 ```
 src/
-  index.ts           # Entry point — OAuthProvider setup, CORS, health check bypass
+  index.ts           # Entry point — OAuthProvider setup, CORS, health check, MCP Registry well-known
   gateway.ts         # MCP JSON-RPC transport, session management, tool dispatch
   oauth-handler.ts   # OAuth 2.1 flows: login, signup, social SSO, consent
   tool-registry.ts   # Tool catalog aggregation, namespacing, schema validation

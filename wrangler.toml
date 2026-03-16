@@ -37,3 +37,4 @@ queue = "stackbilt-user-events"
 
 [vars]
 API_BASE_URL = "https://mcp.stackbilt.dev"
+MCP_REGISTRY_AUTH = "v=MCPv1; k=ed25519; p=qME3oDnYqZuwMYisoQmy9O2ltjoQYWFoCH2MxkaInSs="

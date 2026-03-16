@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.stackbilt.mcp/gateway",
+  "title": "Stackbilt MCP Gateway",
+  "description": "Stackbilt platform MCP gateway — wireframe generation and stack scaffolding tools",
+  "repository": {
+    "url": "https://github.com/Stackbilt-dev/stackbilt-mcp-gateway",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.stackbilt.dev/mcp"
+    }
+  ]
+}

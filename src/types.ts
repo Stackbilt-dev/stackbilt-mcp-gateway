@@ -99,4 +99,7 @@ export interface GatewayEnv {
 
   // Config
   API_BASE_URL: string;
+
+  // MCP Registry domain verification (set via wrangler secret)
+  MCP_REGISTRY_AUTH?: string;
 }
