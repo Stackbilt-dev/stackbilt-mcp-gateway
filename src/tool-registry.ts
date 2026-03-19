@@ -226,7 +226,8 @@ const TOOL_SPECS: ToolSpec[] = [
     description:
       'Generate a complete project scaffold using the TarotScript deterministic engine. ' +
       'Runs spec-cast spreads across 6 modes (PRODUCT, UX, RISK, ARCHITECT, TDD, SPRINT) ' +
-      'with optional oracle prose polish. Returns structured facts and formatted output. ' +
+      'with optional oracle prose polish. Returns structured facts, materialized project files ' +
+      '(.ai/ governance, package.json, wrangler.toml, src/, test/), and next steps. ' +
       'Zero inference for structure, single optional LLM call for prose. ~20ms for structure, ' +
       '~2s with oracle. 21x faster and 95% cheaper than flow_create.',
     inputSchema: {

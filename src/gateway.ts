@@ -8,6 +8,7 @@ import { extractBearerToken, validateBearerToken, buildWwwAuthenticate } from '.
 import { resolveRoute, getToolRiskLevel, ROUTE_TABLE, type BackendRoute } from './route-table.js';
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
 import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
+import { materializeScaffold } from './scaffold-materializer.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -242,10 +243,25 @@ async function proxyRestToolCall(
       analysis?: Record<string, unknown>;
     };
 
+    // Materialize project files from facts (deterministic, zero LLM)
+    let files: Array<{ path: string; content: string }> | undefined;
+    let nextSteps: string[] | undefined;
+    if (result.facts) {
+      try {
+        const materialized = materializeScaffold(result.facts, intention);
+        files = materialized.files;
+        nextSteps = materialized.nextSteps;
+      } catch {
+        // Materializer failure is non-fatal — return facts without files
+      }
+    }
+
     return {
       content: [{ type: 'text', text: JSON.stringify({
         output: result.output,
         facts: result.facts,
+        files,
+        nextSteps,
         receipt: result.receipt,
         analysis: result.analysis,
       }, null, 2) }],
