@@ -10,9 +10,11 @@ export interface BackendRoute {
   /** Human label for discovery/errors */
   product: string;
   /** Key in GatewayEnv for the Service Binding */
-  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE'>;
+  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT'>;
   /** Path on the backend worker that handles MCP JSON-RPC */
   mcpPath: string;
+  /** If true, backend uses REST API not MCP JSON-RPC — gateway translates */
+  restApi?: boolean;
 }
 
 export const ROUTE_TABLE: readonly BackendRoute[] = [
@@ -27,6 +29,13 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     product: 'img-forge',
     bindingKey: 'IMG_FORGE',
     mcpPath: '/mcp',
+  },
+  {
+    prefix: 'scaffold',
+    product: 'TarotScript',
+    bindingKey: 'TAROTSCRIPT',
+    mcpPath: '/run',
+    restApi: true,
   },
 ] as const;
 
@@ -47,6 +56,11 @@ export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   'image_generate': 'EXTERNAL_MUTATION',
   'image_list_models': 'READ_ONLY',
   'image_check_job': 'READ_ONLY',
+
+  // TarotScript scaffold tools
+  'scaffold_create': 'LOCAL_MUTATION',
+  'scaffold_classify': 'READ_ONLY',
+  'scaffold_status': 'READ_ONLY',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */

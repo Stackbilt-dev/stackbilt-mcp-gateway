@@ -39,6 +39,11 @@ const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
     'flow_advance': 'flow_advance',
     'flow_recover': 'flow_recover',
   },
+  scaffold: {
+    'scaffold_create': 'scaffold_create',
+    'scaffold_classify': 'scaffold_classify',
+    'scaffold_status': 'scaffold_status',
+  },
 };
 
 // Reverse map: gateway name → backend native name
@@ -212,6 +217,84 @@ const TOOL_SPECS: ToolSpec[] = [
         job_id: { type: 'string', description: 'The UUID of the generation job to check.' },
       },
       required: ['job_id'],
+    },
+  },
+
+  // ── TarotScript scaffold tools (scaffold_*) ─────────────────
+  {
+    gatewayName: 'scaffold_create',
+    description:
+      'Generate a complete project scaffold using the TarotScript deterministic engine. ' +
+      'Runs spec-cast spreads across 6 modes (PRODUCT, UX, RISK, ARCHITECT, TDD, SPRINT) ' +
+      'with optional oracle prose polish. Returns structured facts and formatted output. ' +
+      'Zero inference for structure, single optional LLM call for prose. ~20ms for structure, ' +
+      '~2s with oracle. 21x faster and 95% cheaper than flow_create.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intention: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 2000,
+          description: 'Project description — what you want to build. Be specific about domain, users, and key features.',
+        },
+        project_type: {
+          type: 'string',
+          enum: ['saas', 'api', 'marketplace', 'dashboard', 'mobile', 'cli', 'library'],
+          description: 'Type of project. Influences which deck cards are most relevant.',
+        },
+        complexity: {
+          type: 'string',
+          enum: ['simple', 'moderate', 'complex'],
+          default: 'moderate',
+          description: 'Project complexity. Affects number of cards drawn per mode.',
+        },
+        oracle: {
+          type: 'boolean',
+          default: false,
+          description: 'Enable oracle prose polish. Adds a single LLM call (~2s) to generate natural language output from structured facts.',
+        },
+        modes: {
+          type: 'array',
+          items: { type: 'string', enum: ['product', 'ux', 'risk', 'architect', 'tdd', 'sprint'] },
+          description: 'Specific modes to run. Omit for all 6.',
+        },
+      },
+      required: ['intention'],
+    },
+  },
+  {
+    gatewayName: 'scaffold_classify',
+    description:
+      'Classify a user message into one of 14 intent categories using the TarotScript ' +
+      'classify-cast spread. Zero inference — uses semantic keyword matching against the ' +
+      'aegis-intents deck. Returns primary classification, confidence, secondary intent, ' +
+      'and compound intent detection.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 2000,
+          description: 'The user message to classify.',
+        },
+        source: {
+          type: 'string',
+          enum: ['user', 'internal', 'voice'],
+          default: 'user',
+          description: 'Message source channel.',
+        },
+      },
+      required: ['message'],
+    },
+  },
+  {
+    gatewayName: 'scaffold_status',
+    description: 'Get TarotScript engine health status, available spreads, and deck statistics.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
 ];

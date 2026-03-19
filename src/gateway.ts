@@ -5,7 +5,7 @@
 
 import type { GatewayEnv, AuthResult, Tier } from './types.js';
 import { extractBearerToken, validateBearerToken, buildWwwAuthenticate } from './auth.js';
-import { resolveRoute, getToolRiskLevel, ROUTE_TABLE } from './route-table.js';
+import { resolveRoute, getToolRiskLevel, ROUTE_TABLE, type BackendRoute } from './route-table.js';
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
 import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
 
@@ -139,6 +139,125 @@ function enforceTierRestriction(
   return `Quality tier "${qualityTier}" requires a Pro plan or higher. Your current plan: ${tier}. Available tiers: ${[...allowed].join(', ')}.`;
 }
 
+// ─── TarotScript REST API translation ─────────────────────────
+// Translates MCP tool calls into TarotScript POST /run requests.
+// Each scaffold_* tool maps to a specific spreadType + querent config.
+
+async function proxyRestToolCall(
+  binding: Fetcher,
+  route: BackendRoute,
+  toolName: string,
+  args: unknown,
+  session: GatewaySession,
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  const a = (args ?? {}) as Record<string, unknown>;
+
+  if (toolName === 'scaffold_status') {
+    // Health check — GET /health + GET /spreads
+    const [healthRes, spreadsRes] = await Promise.all([
+      binding.fetch('https://internal/health'),
+      binding.fetch('https://internal/spreads'),
+    ]);
+    const health = await healthRes.json() as Record<string, unknown>;
+    const spreads = await spreadsRes.json() as Record<string, unknown>;
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ health, spreads }, null, 2) }],
+    };
+  }
+
+  if (toolName === 'scaffold_classify') {
+    const response = await binding.fetch(new Request('https://internal/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gateway-Tenant-Id': session.tenantId ?? '',
+      },
+      body: JSON.stringify({
+        spreadType: 'classify-cast',
+        querent: {
+          id: session.tenantId ?? session.userId ?? 'gateway',
+          intention: a.message as string,
+          state: {
+            message: a.message as string,
+            source: (a.source as string) ?? 'user',
+          },
+        },
+      }),
+    }));
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => `HTTP ${response.status}`);
+      return { content: [{ type: 'text', text: `classify-cast failed: ${err}` }], isError: true };
+    }
+
+    const result = await response.json() as { facts?: Record<string, string>; output?: string[] };
+    return {
+      content: [{ type: 'text', text: JSON.stringify({
+        classification: result.facts?.classification,
+        confidence: result.facts?.classification_confidence,
+        executor: result.facts?.classification_executor,
+        complexity: result.facts?.classification_complexity,
+        secondary: result.facts?.secondary_classification,
+        compound_intent: result.facts?.compound_intent,
+        tiebreaker_override: result.facts?.tiebreaker_override,
+      }, null, 2) }],
+    };
+  }
+
+  if (toolName === 'scaffold_create') {
+    const intention = a.intention as string;
+    const state: Record<string, string> = {
+      project_type: (a.project_type as string) ?? 'saas',
+      complexity: (a.complexity as string) ?? 'moderate',
+    };
+    if (a.modes) state.modes = (a.modes as string[]).join(',');
+
+    const response = await binding.fetch(new Request('https://internal/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gateway-Tenant-Id': session.tenantId ?? '',
+      },
+      body: JSON.stringify({
+        spreadType: 'scaffold-cast',
+        querent: {
+          id: session.tenantId ?? session.userId ?? 'gateway',
+          intention,
+          state,
+        },
+        inscribe: true,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    }));
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => `HTTP ${response.status}`);
+      return { content: [{ type: 'text', text: `scaffold-cast failed: ${err}` }], isError: true };
+    }
+
+    const result = await response.json() as {
+      output?: string[];
+      facts?: Record<string, unknown>;
+      receipt?: { hash: string; seed: number };
+      analysis?: Record<string, unknown>;
+    };
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify({
+        output: result.output,
+        facts: result.facts,
+        receipt: result.receipt,
+        analysis: result.analysis,
+      }, null, 2) }],
+    };
+  }
+
+  return {
+    content: [{ type: 'text', text: `Unknown TarotScript tool: ${toolName}` }],
+    isError: true,
+  };
+}
+
 // ─── Proxy a tool call to a backend worker ────────────────────
 async function proxyToolCall(
   env: GatewayEnv,
@@ -172,6 +291,21 @@ async function proxyToolCall(
   const { route } = resolved;
   const backendToolName = toBackendToolName(gatewayToolName);
   const binding = env[route.bindingKey] as Fetcher;
+
+  // ── REST API backends (e.g. TarotScript) ──────────────────────
+  if (route.restApi) {
+    try {
+      const result = await proxyRestToolCall(binding, route, backendToolName, args, session);
+      audit({ ...auditBase, outcome: 'success', latency_ms: Date.now() - start }, env);
+      return result;
+    } catch (err) {
+      audit({ ...auditBase, outcome: 'backend_error', latency_ms: Date.now() - start }, env);
+      return {
+        content: [{ type: 'text', text: `${route.product} error: ${sanitizeError(err instanceof Error ? err.message : String(err))}` }],
+        isError: true,
+      };
+    }
+  }
 
   // Build JSON-RPC request to forward to the backend
   const rpcBody = {

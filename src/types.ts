@@ -86,6 +86,7 @@ export interface GatewayEnv {
   AUTH_SERVICE: AuthServiceRpc;
   STACKBILDER: Fetcher;
   IMG_FORGE: Fetcher;
+  TAROTSCRIPT?: Fetcher;
 
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;

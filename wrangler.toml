@@ -20,6 +20,10 @@ service = "edge-stack-architect-v2"
 binding = "IMG_FORGE"
 service = "img-forge-mcp"
 
+[[services]]
+binding = "TAROTSCRIPT"
+service = "tarotscript-worker"
+
 # OAuth KV (shared namespace with img-forge-mcp during transition)
 [[kv_namespaces]]
 binding = "OAUTH_KV"

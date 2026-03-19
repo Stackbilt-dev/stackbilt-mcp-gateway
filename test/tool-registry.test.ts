@@ -48,9 +48,9 @@ describe('toGatewayToolName', () => {
 });
 
 describe('buildAggregatedCatalog', () => {
-  it('returns all 10 tools', () => {
+  it('returns all 13 tools', () => {
     const catalog = buildAggregatedCatalog();
-    expect(catalog).toHaveLength(10);
+    expect(catalog).toHaveLength(13);
   });
 
   it('every tool has a risk level annotation', () => {

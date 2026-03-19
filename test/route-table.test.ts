@@ -73,8 +73,8 @@ describe('getToolRiskLevel', () => {
 });
 
 describe('ROUTE_TABLE', () => {
-  it('has exactly 2 entries', () => {
-    expect(ROUTE_TABLE).toHaveLength(2);
+  it('has exactly 3 entries', () => {
+    expect(ROUTE_TABLE).toHaveLength(3);
   });
 
   it('each entry has required fields', () => {
