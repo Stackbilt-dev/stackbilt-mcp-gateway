@@ -20,8 +20,23 @@ A single MCP endpoint (`mcp.stackbilt.dev/mcp`) that routes tool calls to multip
 
 | Backend | Tools | Description |
 |---------|-------|-------------|
-| **Stackbilder** | `flow_create`, `flow_status`, `flow_summary`, `flow_quality`, `flow_governance`, `flow_advance`, `flow_recover` | Architecture flow orchestration |
-| **img-forge** | `image_generate`, `image_list_models`, `image_check_job` | AI image generation |
+| **TarotScript** | `scaffold_create`, `scaffold_classify`, `scaffold_publish`, `scaffold_status` | Deterministic project scaffolding — describe a project, get deployable files + GitHub repo |
+| **img-forge** | `image_generate`, `image_list_models`, `image_check_job` | AI image generation (5 quality tiers) |
+| **Stackbilder** | `flow_create`, `flow_status`, `flow_summary`, `flow_quality`, `flow_governance`, `flow_advance`, `flow_recover` | Architecture flow orchestration (legacy — migrating to scaffold_*) |
+
+### The Scaffold Pipeline (E2E)
+
+```
+You: "Build a restaurant menu API with D1 storage"
+  ↓
+scaffold_create → structured facts + 9 deployable project files
+  ↓
+scaffold_publish → GitHub repo with atomic initial commit
+  ↓
+git clone → npm install → npx wrangler deploy → live Worker
+```
+
+Zero LLM calls for file generation. ~20ms for structure, ~2s with oracle prose. 21x faster than flow_create.
 
 ## Key Features
 

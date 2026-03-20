@@ -6,18 +6,25 @@ Welcome to the Stackbilt MCP Gateway. This guide walks you through creating an a
 
 Stackbilt exposes AI tools through the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) — an open standard that lets AI assistants use tools securely. One gateway, multiple products:
 
-| Tool | What it does |
-|------|-------------|
-| `image.generate` | Generate images from text prompts via img-forge |
-| `image.list_models` | List available image generation models |
-| `image.check_job` | Check the status of a generation job |
-| `flow.create` | Create an architecture flow via Stackbilder |
-| `flow.status` | Check flow generation status |
-| `flow.summary` | Get a summary of a completed flow |
-| `flow.quality` | Run quality checks on a flow |
-| `flow.governance` | Check governance compliance |
-| `flow.advance` | Advance a flow to the next stage |
-| `flow.recover` | Recover a failed flow |
+| Tool | What it does | Risk |
+|------|-------------|------|
+| **Scaffold** | | |
+| `scaffold_create` | Generate project scaffold — structured facts + deployable files from a description | LOCAL_MUTATION |
+| `scaffold_classify` | Classify a message into intent categories (zero LLM) | READ_ONLY |
+| `scaffold_publish` | Publish files to a GitHub repository (atomic multi-file commit) | EXTERNAL_MUTATION |
+| `scaffold_status` | Check TarotScript engine health and available spreads | READ_ONLY |
+| **img-forge** | | |
+| `image_generate` | Generate images from text prompts (5 quality tiers: draft → ultra_plus) | EXTERNAL_MUTATION |
+| `image_list_models` | List available image generation models and tiers | READ_ONLY |
+| `image_check_job` | Check the status of an async generation job | READ_ONLY |
+| **Stackbilder** *(legacy — migrating to scaffold_\*)* | | |
+| `flow_create` | Create an architecture flow via LLM orchestration | LOCAL_MUTATION |
+| `flow_status` | Check flow generation status | READ_ONLY |
+| `flow_summary` | Get a completed flow summary | READ_ONLY |
+| `flow_quality` | Get per-mode quality scores | READ_ONLY |
+| `flow_governance` | Check governance posture | READ_ONLY |
+| `flow_advance` | Advance a flow to the next stage | LOCAL_MUTATION |
+| `flow_recover` | Recover a failed flow | LOCAL_MUTATION |
 
 **Free tier**: 50 credits/month. No credit card required. Credits are weighted by operation complexity.
 
@@ -132,28 +139,126 @@ If your client doesn't support MCP OAuth natively:
 
 ## 3. Using Tools
 
-Once connected, your MCP client discovers tools automatically via `tools/list`. Here's what a typical session looks like:
+Once connected, your MCP client discovers tools automatically via `tools/list`. Here's what you can do:
+
+### Scaffold a Project (E2E)
+
+The scaffold pipeline turns a project description into a deployable GitHub repository in two tool calls.
+
+**Step 1: Generate the scaffold**
+
+Ask your AI assistant:
+> "Scaffold a Cloudflare Workers API for managing restaurant menu items with D1 storage"
+
+Behind the scenes, the client calls `scaffold_create`:
+
+```json
+{
+  "name": "scaffold_create",
+  "arguments": {
+    "intention": "A Cloudflare Workers API for managing restaurant menu items with D1 storage",
+    "project_type": "api",
+    "complexity": "moderate"
+  }
+}
+```
+
+You'll receive structured output:
+
+- **`facts`** — 40+ key-value pairs covering product requirements, UX patterns, security threats, runtime decisions, test plans, and sprint tasks
+- **`files`** — 9 deployable project files: `.ai/` governance, `package.json`, `tsconfig.json`, `wrangler.toml`, `src/index.ts`, `test/index.test.ts`, `README.md`
+- **`nextSteps`** — what to do after scaffolding
+- **`receipt`** — cryptographic hash + seed for reproducibility
+- **`analysis`** — card positions, elemental census, dignity pairs (TarotScript symbolic analysis)
+
+All files are generated deterministically from the TarotScript deck engine. Zero LLM calls. ~20ms for structure.
+
+**Step 2: Publish to GitHub**
+
+Ask your assistant:
+> "Publish those files to a GitHub repo called restaurant-menu-api"
+
+The client calls `scaffold_publish`:
+
+```json
+{
+  "name": "scaffold_publish",
+  "arguments": {
+    "repo_name": "restaurant-menu-api",
+    "owner": "your-org",
+    "files": [...the files array from step 1...],
+    "description": "Restaurant menu API — scaffolded by Stackbilt"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "repo_url": "https://github.com/your-org/restaurant-menu-api",
+  "clone_url": "https://github.com/your-org/restaurant-menu-api.git",
+  "commit_sha": "5a6dad89...",
+  "files_committed": 9,
+  "next_steps": [
+    "git clone https://github.com/your-org/restaurant-menu-api.git",
+    "npm install",
+    "npx wrangler d1 create restaurant-menu-api",
+    "npx wrangler deploy"
+  ]
+}
+```
+
+**Step 3: Deploy**
+
+```bash
+git clone https://github.com/your-org/restaurant-menu-api.git
+cd restaurant-menu-api
+npm install
+npx wrangler d1 create restaurant-menu-api  # update database_id in wrangler.toml
+npx wrangler deploy
+```
+
+Your Worker is live. The entire flow — describe, scaffold, publish, deploy — can happen in a single AI conversation.
 
 ### Generate an Image
 
 Ask your AI assistant:
 > "Generate an image of a mountain landscape at sunset"
 
-Behind the scenes, the client calls `image.generate` with your prompt. img-forge enhances the prompt, selects the best model, and returns the image URL.
+The client calls `image_generate` with your prompt. img-forge enhances the prompt, selects the best model for your quality tier, and returns:
 
-### Create an Architecture Flow
+```json
+{
+  "url": "https://imgforge.stackbilt.dev/images/abc123.png",
+  "model": "flux-dev",
+  "quality_tier": "premium",
+  "enhanced_prompt": "A breathtaking mountain landscape at golden hour..."
+}
+```
 
-Ask your AI assistant:
-> "Create an architecture flow for a real-time chat application with WebSocket support"
+**Quality tiers**: `draft` (fastest, SDXL), `standard` (FLUX Klein, default), `premium` (FLUX Dev), `ultra` (Gemini 2.5 Flash), `ultra_plus` (Gemini 3.1 Flash).
 
-Stackbilder generates a complete architecture diagram with component relationships, data flows, and deployment recommendations.
+### Classify Intent
 
-### Check a Job
+Use `scaffold_classify` for zero-inference intent classification:
 
-If a generation is still processing:
-> "Check the status of my last image generation"
+> "What kind of request is 'help me debug this authentication error'?"
 
-The client calls `image.check_job` with the job ID from the previous response.
+```json
+{
+  "name": "scaffold_classify",
+  "arguments": { "message": "help me debug this authentication error" }
+}
+```
+
+Returns primary classification, confidence, secondary intent, and compound intent detection. Zero LLM calls — uses semantic keyword matching against the TarotScript aegis-intents deck.
+
+### Check Engine Status
+
+> "Is the scaffold engine healthy?"
+
+Calls `scaffold_status` — returns available spreads, deck statistics, and engine health.
 
 ---
 
@@ -163,8 +268,8 @@ When you approve access, you grant these scopes:
 
 | Scope | What it allows |
 |-------|---------------|
-| `generate` | Create content — images, architecture flows |
-| `read` | View resources — models, job status, flow details |
+| `generate` | Create content — scaffolds, images, flows, GitHub repos |
+| `read` | View resources — models, job status, engine health, classifications |
 
 Both scopes are granted by default on the free tier.
 
@@ -205,7 +310,10 @@ Public signups haven't been enabled yet. If you're seeing this, you may be acces
 - Ensure your client handles OAuth 2.1 with PKCE
 
 ### Tool call returns "Unknown tool"
-Run `tools/list` to see available tools. Tool names are namespaced: `image.generate`, not `generate_image`.
+Run `tools/list` to see available tools. Tool names use underscore namespacing: `scaffold_create`, `image_generate`, not `generate_image`.
+
+### scaffold_publish needs a GitHub token
+Pass `github_token` as a parameter with a GitHub PAT that has `repo` scope. Or ask the gateway operator to set the `GITHUB_TOKEN` secret.
 
 ### Quota exceeded
 Check your usage at the beginning of each month. Free tier resets monthly. Upgrade options coming soon.
