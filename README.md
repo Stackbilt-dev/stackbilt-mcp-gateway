@@ -20,7 +20,7 @@ A single MCP endpoint (`mcp.stackbilt.dev/mcp`) that routes tool calls to multip
 
 | Backend | Tools | Description |
 |---------|-------|-------------|
-| **TarotScript** | `scaffold_create`, `scaffold_classify`, `scaffold_publish`, `scaffold_status` | Deterministic project scaffolding — describe a project, get deployable files + GitHub repo |
+| **TarotScript** | `scaffold_create`, `scaffold_classify`, `scaffold_publish`, `scaffold_deploy`, `scaffold_import`, `scaffold_status` | Deterministic project scaffolding, n8n workflow import, GitHub publishing, CF deployment |
 | **img-forge** | `image_generate`, `image_list_models`, `image_check_job` | AI image generation (5 quality tiers) |
 | **Stackbilder** | `flow_create`, `flow_status`, `flow_summary`, `flow_quality`, `flow_governance`, `flow_advance`, `flow_recover` | Architecture flow orchestration (legacy — migrating to scaffold_*) |
 

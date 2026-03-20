@@ -254,6 +254,47 @@ Use `scaffold_classify` for zero-inference intent classification:
 
 Returns primary classification, confidence, secondary intent, and compound intent detection. Zero LLM calls — uses semantic keyword matching against the TarotScript aegis-intents deck.
 
+### Import an n8n Workflow
+
+Have an existing n8n automation? Convert it to an edge-native Cloudflare Worker:
+
+> "Import this n8n workflow and convert it to a Worker"
+
+The client calls `scaffold_import`:
+
+```json
+{
+  "name": "scaffold_import",
+  "arguments": {
+    "workflow": { ...your n8n workflow JSON... }
+  }
+}
+```
+
+The transpiler parses your n8n nodes (webhooks, HTTP requests, conditionals, loops, database queries, AI calls) and generates a complete Worker project:
+
+```json
+{
+  "files": [
+    { "path": "src/index.ts", "content": "// Full transpiled Worker..." },
+    { "path": "wrangler.toml", "content": "// Bindings, secrets, queues..." },
+    { "path": "package.json", "content": "..." },
+    { "path": "README.md", "content": "// Setup + deploy instructions..." }
+  ],
+  "summary": {
+    "workflowName": "My Automation",
+    "totalNodes": 8,
+    "supportedNodes": 8,
+    "unsupportedNodes": 0,
+    "resources": { "secrets": 2, "databases": 1, "queues": 1 }
+  }
+}
+```
+
+Pipe the `files[]` output to `scaffold_publish` → `scaffold_deploy` for full E2E: n8n workflow → deployed edge Worker in one conversation.
+
+**Supported n8n nodes**: Webhook, Schedule, HTTP Request, IF/Switch, Loop, Database (Postgres/MySQL via Hyperdrive), AI (OpenAI → Workers AI), Edit Fields, Set.
+
 ### Check Engine Status
 
 > "Is the scaffold engine healthy?"
