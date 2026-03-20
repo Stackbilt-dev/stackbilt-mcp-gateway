@@ -43,6 +43,7 @@ const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
     'scaffold_create': 'scaffold_create',
     'scaffold_classify': 'scaffold_classify',
     'scaffold_status': 'scaffold_status',
+    'scaffold_publish': 'scaffold_publish',
   },
 };
 
@@ -288,6 +289,59 @@ const TOOL_SPECS: ToolSpec[] = [
         },
       },
       required: ['message'],
+    },
+  },
+  {
+    gatewayName: 'scaffold_publish',
+    description:
+      'Publish scaffold_create output to a GitHub repository. Takes the files[] array from scaffold_create ' +
+      'and creates a new repo with an atomic initial commit via the Git Data API. ' +
+      'Returns repo URL, clone URL, and next steps for deployment. ' +
+      'Requires a GitHub token (pass as parameter or set GITHUB_TOKEN secret on the gateway).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo_name: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 100,
+          description: 'Repository name (e.g., "my-restaurant-api"). Will be created under the specified owner.',
+        },
+        owner: {
+          type: 'string',
+          description: 'GitHub org or username to create the repo under. Defaults to gateway config.',
+        },
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'File path (e.g., "src/index.ts")' },
+              content: { type: 'string', description: 'File content' },
+            },
+            required: ['path', 'content'],
+          },
+          description: 'Files to commit. Pass the files[] array from scaffold_create output.',
+        },
+        github_token: {
+          type: 'string',
+          description: 'GitHub Personal Access Token with repo scope. Optional if GITHUB_TOKEN is set on the gateway.',
+        },
+        private: {
+          type: 'boolean',
+          default: true,
+          description: 'Whether to create a private repo. Defaults to true.',
+        },
+        description: {
+          type: 'string',
+          description: 'Repository description.',
+        },
+        commit_message: {
+          type: 'string',
+          description: 'Custom initial commit message.',
+        },
+      },
+      required: ['repo_name', 'files'],
     },
   },
   {

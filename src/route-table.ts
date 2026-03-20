@@ -61,6 +61,7 @@ export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   'scaffold_create': 'LOCAL_MUTATION',
   'scaffold_classify': 'READ_ONLY',
   'scaffold_status': 'READ_ONLY',
+  'scaffold_publish': 'EXTERNAL_MUTATION',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */

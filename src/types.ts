@@ -103,4 +103,7 @@ export interface GatewayEnv {
 
   // MCP Registry domain verification (set via wrangler secret)
   MCP_REGISTRY_AUTH?: string;
+
+  // GitHub PAT for scaffold_publish (optional — users can also pass per-request)
+  GITHUB_TOKEN?: string;
 }

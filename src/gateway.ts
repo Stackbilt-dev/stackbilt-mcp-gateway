@@ -9,6 +9,7 @@ import { resolveRoute, getToolRiskLevel, ROUTE_TABLE, type BackendRoute } from '
 import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from './tool-registry.js';
 import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
 import { materializeScaffold } from './scaffold-materializer.js';
+import { publishToGitHub } from './scaffold-publish.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -150,6 +151,7 @@ async function proxyRestToolCall(
   toolName: string,
   args: unknown,
   session: GatewaySession,
+  env: GatewayEnv,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   const a = (args ?? {}) as Record<string, unknown>;
 
@@ -268,6 +270,41 @@ async function proxyRestToolCall(
     };
   }
 
+  if (toolName === 'scaffold_publish') {
+    const repoName = a.repo_name as string;
+    const owner = (a.owner as string) ?? 'Stackbilt-dev';
+    const filesJson = a.files as Array<{ path: string; content: string }> | undefined;
+    const githubToken = (a.github_token as string) ?? env.GITHUB_TOKEN;
+
+    if (!githubToken) {
+      return { content: [{ type: 'text', text: 'No GitHub token provided. Pass github_token parameter or set GITHUB_TOKEN secret.' }], isError: true };
+    }
+
+    if (!filesJson || filesJson.length === 0) {
+      return { content: [{ type: 'text', text: 'No files provided. Run scaffold_create first to generate files[].' }], isError: true };
+    }
+
+    try {
+      const result = await publishToGitHub(githubToken, {
+        repo_name: repoName,
+        owner,
+        files: filesJson,
+        private: (a.private as boolean) ?? true,
+        description: a.description as string | undefined,
+        commit_message: a.commit_message as string | undefined,
+      });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `scaffold_publish failed: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+
   return {
     content: [{ type: 'text', text: `Unknown TarotScript tool: ${toolName}` }],
     isError: true,
@@ -311,7 +348,7 @@ async function proxyToolCall(
   // ── REST API backends (e.g. TarotScript) ──────────────────────
   if (route.restApi) {
     try {
-      const result = await proxyRestToolCall(binding, route, backendToolName, args, session);
+      const result = await proxyRestToolCall(binding, route, backendToolName, args, session, env);
       audit({ ...auditBase, outcome: 'success', latency_ms: Date.now() - start }, env);
       return result;
     } catch (err) {
