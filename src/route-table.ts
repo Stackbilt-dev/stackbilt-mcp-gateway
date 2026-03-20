@@ -10,7 +10,7 @@ export interface BackendRoute {
   /** Human label for discovery/errors */
   product: string;
   /** Key in GatewayEnv for the Service Binding */
-  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER'>;
+  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER' | 'VISUAL_QA'>;
   /** Path on the backend worker that handles MCP JSON-RPC */
   mcpPath: string;
   /** If true, backend uses REST API not MCP JSON-RPC — gateway translates */
@@ -35,6 +35,13 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     product: 'TarotScript',
     bindingKey: 'TAROTSCRIPT',
     mcpPath: '/run',
+    restApi: true,
+  },
+  {
+    prefix: 'visual',
+    product: 'Visual QA',
+    bindingKey: 'VISUAL_QA',
+    mcpPath: '/analyze',
     restApi: true,
   },
 ] as const;
@@ -63,6 +70,11 @@ export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   'scaffold_status': 'READ_ONLY',
   'scaffold_publish': 'EXTERNAL_MUTATION',
   'scaffold_deploy': 'EXTERNAL_MUTATION',
+
+  // Visual QA tools
+  'visual_screenshot': 'LOCAL_MUTATION',
+  'visual_analyze': 'LOCAL_MUTATION',
+  'visual_pages': 'READ_ONLY',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */

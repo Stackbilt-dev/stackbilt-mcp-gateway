@@ -46,6 +46,11 @@ const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
     'scaffold_publish': 'scaffold_publish',
     'scaffold_deploy': 'scaffold_deploy',
   },
+  visual: {
+    'visual_screenshot': 'visual_screenshot',
+    'visual_analyze': 'visual_analyze',
+    'visual_pages': 'visual_pages',
+  },
 };
 
 // Reverse map: gateway name → backend native name
@@ -393,6 +398,74 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     gatewayName: 'scaffold_status',
     description: 'Get TarotScript engine health status, available spreads, and deck statistics.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+
+  // ── Visual QA tools (visual_*) ──────────────────────────────
+  {
+    gatewayName: 'visual_screenshot',
+    description:
+      'Capture a screenshot of a web page and store it for analysis. ' +
+      'Pass a URL to screenshot via headless Chrome, or upload a base64-encoded PNG. ' +
+      'Returns a screenshot_id for use with visual_analyze.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'HTTPS URL to screenshot. Mutually exclusive with image_base64.',
+        },
+        image_base64: {
+          type: 'string',
+          description: 'Base64-encoded PNG image to upload (for local screenshot → cloud analysis).',
+        },
+        page_id: {
+          type: 'string',
+          description: 'Identifier for the page (used for baseline tracking).',
+        },
+        width: { type: 'number', description: 'Viewport width (default: 1280).' },
+        height: { type: 'number', description: 'Viewport height (default: 800).' },
+      },
+    },
+  },
+  {
+    gatewayName: 'visual_analyze',
+    description:
+      'Analyze a screenshot using Workers AI vision models (Llama 4 Scout). ' +
+      'Detects layout issues, broken elements, accessibility problems, and content regressions. ' +
+      'Pass a screenshot_id from visual_screenshot, a URL (takes fresh screenshot), or inline base64 image.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        screenshot_id: {
+          type: 'string',
+          description: 'ID from a previous visual_screenshot call.',
+        },
+        url: {
+          type: 'string',
+          description: 'HTTPS URL to screenshot and analyze in one step.',
+        },
+        image_base64: {
+          type: 'string',
+          description: 'Base64-encoded PNG to analyze directly.',
+        },
+        page_id: {
+          type: 'string',
+          description: 'Page identifier (for tracking).',
+        },
+        prompt: {
+          type: 'string',
+          description: 'Custom analysis prompt (override default visual QA prompt).',
+        },
+      },
+    },
+  },
+  {
+    gatewayName: 'visual_pages',
+    description: 'List all monitored pages in the visual QA system.',
     inputSchema: {
       type: 'object',
       properties: {},

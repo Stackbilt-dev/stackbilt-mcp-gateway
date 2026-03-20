@@ -385,8 +385,59 @@ async function proxyRestToolCall(
     }
   }
 
+  // ── Visual QA tools ────────────────────────────────────────────
+
+  if (toolName === 'visual_screenshot' || toolName === 'visual_analyze' || toolName === 'visual_pages') {
+    const vqaBinding = env.VISUAL_QA;
+    if (!vqaBinding) {
+      return { content: [{ type: 'text', text: 'Visual QA service not configured' }], isError: true };
+    }
+
+    // Map tool name to endpoint
+    const endpointMap: Record<string, { path: string; method: string }> = {
+      visual_screenshot: { path: '/upload', method: 'POST' },
+      visual_analyze: { path: '/analyze', method: 'POST' },
+      visual_pages: { path: '/pages', method: 'GET' },
+    };
+
+    const endpoint = endpointMap[toolName];
+    if (!endpoint) {
+      return { content: [{ type: 'text', text: `Unknown visual tool: ${toolName}` }], isError: true };
+    }
+
+    try {
+      const fetchInit: RequestInit = {
+        method: endpoint.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Gateway-Tenant-Id': session.tenantId ?? '',
+        },
+        signal: AbortSignal.timeout(60_000),
+      };
+
+      if (endpoint.method === 'POST') {
+        fetchInit.body = JSON.stringify(a);
+      }
+
+      const res = await vqaBinding.fetch(
+        new Request(`https://internal${endpoint.path}`, fetchInit),
+      );
+
+      const data = await res.json();
+      return {
+        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        isError: !res.ok,
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Visual QA error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+
   return {
-    content: [{ type: 'text', text: `Unknown scaffold tool: ${toolName}` }],
+    content: [{ type: 'text', text: `Unknown REST tool: ${toolName}` }],
     isError: true,
   };
 }

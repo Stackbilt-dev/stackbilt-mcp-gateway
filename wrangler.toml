@@ -32,6 +32,10 @@ service = "stackbilt-engine"
 binding = "DEPLOYER"
 service = "stackbilt-deployer"
 
+[[services]]
+binding = "VISUAL_QA"
+service = "stackbilt-visual-qa"
+
 # OAuth KV (shared namespace with img-forge-mcp during transition)
 [[kv_namespaces]]
 binding = "OAUTH_KV"

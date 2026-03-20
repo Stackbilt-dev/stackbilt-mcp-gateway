@@ -89,6 +89,7 @@ export interface GatewayEnv {
   TAROTSCRIPT?: Fetcher;
   ENGINE?: Fetcher;
   DEPLOYER?: Fetcher;
+  VISUAL_QA?: Fetcher;
 
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;
