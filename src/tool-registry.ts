@@ -44,6 +44,7 @@ const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
     'scaffold_classify': 'scaffold_classify',
     'scaffold_status': 'scaffold_status',
     'scaffold_publish': 'scaffold_publish',
+    'scaffold_deploy': 'scaffold_deploy',
   },
 };
 
@@ -342,6 +343,51 @@ const TOOL_SPECS: ToolSpec[] = [
         },
       },
       required: ['repo_name', 'files'],
+    },
+  },
+  {
+    gatewayName: 'scaffold_deploy',
+    description:
+      'Deploy a Cloudflare Worker to a user\'s account. Takes a bundled script, worker name, and CF credentials. ' +
+      'Quality gate rejects unimplemented scaffold stubs. Post-deploy health check verifies the Worker is live. ' +
+      'Audit-logged. Rate limited to 5 deploys/hour.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cf_api_token: {
+          type: 'string',
+          description: 'Cloudflare API token with Workers Scripts:Edit scope.',
+        },
+        cf_account_id: {
+          type: 'string',
+          description: 'Cloudflare account ID to deploy to.',
+        },
+        worker_name: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 63,
+          description: 'Name for the Worker (becomes the subdomain).',
+        },
+        script: {
+          type: 'string',
+          description: 'Bundled JavaScript/TypeScript Worker script content.',
+        },
+        compatibility_date: {
+          type: 'string',
+          description: 'Workers compatibility date (default: 2026-03-20).',
+        },
+        compatibility_flags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Compatibility flags (default: ["nodejs_compat"]).',
+        },
+        bindings: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'Worker bindings (D1, KV, etc.) in Cloudflare API format.',
+        },
+      },
+      required: ['cf_api_token', 'cf_account_id', 'worker_name', 'script'],
     },
   },
   {

@@ -87,6 +87,8 @@ export interface GatewayEnv {
   STACKBILDER: Fetcher;
   IMG_FORGE: Fetcher;
   TAROTSCRIPT?: Fetcher;
+  ENGINE?: Fetcher;
+  DEPLOYER?: Fetcher;
 
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;

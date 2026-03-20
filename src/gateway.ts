@@ -245,17 +245,57 @@ async function proxyRestToolCall(
       analysis?: Record<string, unknown>;
     };
 
-    // Materialize project files from facts (deterministic, zero LLM)
+    // Materialize project files — try engine templates first, fall back to basic materializer
     let files: Array<{ path: string; content: string }> | undefined;
     let nextSteps: string[] | undefined;
-    if (result.facts) {
+    let fileSource: 'engine' | 'basic' | 'none' = 'none';
+
+    // Try engine templates (rich, stack-aware: real CRUD, migrations, auth)
+    if (env.ENGINE) {
+      try {
+        const engineRes = await env.ENGINE.fetch(new Request('https://internal/scaffold', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: intention, tier: 'blessed' }),
+          signal: AbortSignal.timeout(10_000),
+        }));
+        if (engineRes.ok) {
+          const engineData = await engineRes.json() as {
+            files?: Array<{ path: string; content: string }>;
+            project_name?: string;
+          };
+          if (engineData.files && engineData.files.length > 0) {
+            files = engineData.files;
+            fileSource = 'engine';
+          }
+        }
+      } catch {
+        // Engine unavailable — fall through to basic materializer
+      }
+    }
+
+    // Fall back to basic materializer if engine didn't produce files
+    if (!files && result.facts) {
       try {
         const materialized = materializeScaffold(result.facts, intention);
         files = materialized.files;
         nextSteps = materialized.nextSteps;
+        fileSource = 'basic';
       } catch {
         // Materializer failure is non-fatal — return facts without files
       }
+    }
+
+    // Default next steps if engine produced files but no steps
+    if (files && !nextSteps) {
+      const projectName = files.find(f => f.path === 'package.json')
+        ? JSON.parse(files.find(f => f.path === 'package.json')!.content).name
+        : 'my-project';
+      nextSteps = [
+        'npm install',
+        `npx wrangler d1 create ${projectName}  # if D1 binding needed`,
+        'npx wrangler deploy',
+      ];
     }
 
     return {
@@ -263,6 +303,7 @@ async function proxyRestToolCall(
         output: result.output,
         facts: result.facts,
         files,
+        fileSource,
         nextSteps,
         receipt: result.receipt,
         analysis: result.analysis,
@@ -305,8 +346,47 @@ async function proxyRestToolCall(
     }
   }
 
+  if (toolName === 'scaffold_deploy') {
+    if (!env.DEPLOYER) {
+      return { content: [{ type: 'text', text: 'Deployer service not configured' }], isError: true };
+    }
+
+    const body = {
+      cf_api_token: a.cf_api_token as string,
+      cf_account_id: a.cf_account_id as string,
+      worker_name: a.worker_name as string,
+      script: a.script as string,
+      compatibility_date: a.compatibility_date as string | undefined,
+      compatibility_flags: a.compatibility_flags as string[] | undefined,
+      bindings: a.bindings as Array<Record<string, unknown>> | undefined,
+    };
+
+    try {
+      const res = await env.DEPLOYER.fetch(new Request('https://internal/deploy/worker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Gateway-Tenant-Id': session.tenantId ?? '',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60_000),
+      }));
+
+      const data = await res.json() as Record<string, unknown>;
+      return {
+        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        isError: !res.ok,
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Deploy failed: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+
   return {
-    content: [{ type: 'text', text: `Unknown TarotScript tool: ${toolName}` }],
+    content: [{ type: 'text', text: `Unknown scaffold tool: ${toolName}` }],
     isError: true,
   };
 }
