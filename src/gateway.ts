@@ -436,6 +436,41 @@ async function proxyRestToolCall(
     }
   }
 
+  // ── n8n Transpiler ──────────────────────────────────────────────
+
+  if (toolName === 'scaffold_import') {
+    const transpiler = env.TRANSPILER;
+    if (!transpiler) {
+      return { content: [{ type: 'text', text: 'n8n transpiler service not configured' }], isError: true };
+    }
+
+    try {
+      const res = await transpiler.fetch(new Request('https://internal/transpile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Gateway-Tenant-Id': session.tenantId ?? '',
+        },
+        body: JSON.stringify({
+          workflow: a.workflow,
+          project_name: a.project_name,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      }));
+
+      const data = await res.json();
+      return {
+        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        isError: !res.ok,
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Transpiler error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+
   return {
     content: [{ type: 'text', text: `Unknown REST tool: ${toolName}` }],
     isError: true,

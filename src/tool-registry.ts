@@ -45,6 +45,7 @@ const TOOL_NAME_MAP: Record<string, Record<string, string>> = {
     'scaffold_status': 'scaffold_status',
     'scaffold_publish': 'scaffold_publish',
     'scaffold_deploy': 'scaffold_deploy',
+    'scaffold_import': 'scaffold_import',
   },
   visual: {
     'visual_screenshot': 'visual_screenshot',
@@ -393,6 +394,28 @@ const TOOL_SPECS: ToolSpec[] = [
         },
       },
       required: ['cf_api_token', 'cf_account_id', 'worker_name', 'script'],
+    },
+  },
+  {
+    gatewayName: 'scaffold_import',
+    description:
+      'Import an n8n workflow and transpile it to a deployable Cloudflare Worker. ' +
+      'Paste your n8n workflow JSON and get back a complete Worker project (src/index.ts, wrangler.toml, package.json). ' +
+      'Supports: webhooks, HTTP requests, conditionals (IF/Switch), loops, database queries, Workers AI, edit fields, schedule triggers. ' +
+      'Output is compatible with scaffold_publish and scaffold_deploy for full E2E.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workflow: {
+          type: 'object',
+          description: 'n8n workflow JSON object (export from n8n via "Download" or copy from the workflow editor).',
+        },
+        project_name: {
+          type: 'string',
+          description: 'Name for the generated Worker project. Defaults to workflow name.',
+        },
+      },
+      required: ['workflow'],
     },
   },
   {

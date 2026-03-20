@@ -90,6 +90,7 @@ export interface GatewayEnv {
   ENGINE?: Fetcher;
   DEPLOYER?: Fetcher;
   VISUAL_QA?: Fetcher;
+  TRANSPILER?: Fetcher;
 
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;

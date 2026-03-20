@@ -10,7 +10,7 @@ export interface BackendRoute {
   /** Human label for discovery/errors */
   product: string;
   /** Key in GatewayEnv for the Service Binding */
-  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER' | 'VISUAL_QA'>;
+  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER' | 'VISUAL_QA' | 'TRANSPILER'>;
   /** Path on the backend worker that handles MCP JSON-RPC */
   mcpPath: string;
   /** If true, backend uses REST API not MCP JSON-RPC — gateway translates */
@@ -75,6 +75,9 @@ export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
   'visual_screenshot': 'LOCAL_MUTATION',
   'visual_analyze': 'LOCAL_MUTATION',
   'visual_pages': 'READ_ONLY',
+
+  // n8n Transpiler tools
+  'scaffold_import': 'LOCAL_MUTATION',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */
