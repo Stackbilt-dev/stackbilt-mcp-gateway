@@ -46,9 +46,163 @@ function traitsInclude(facts: Facts, ...terms: string[]): boolean {
 }
 
 function deriveProjectName(_facts: Facts, intention: string): string {
-  // Use first 3-4 meaningful words from intention, skip common prefixes
   const stripped = intention.replace(/^(a|an|the|build|create|make)\s+/i, '');
   return slugify(stripped.split(/\s+/).slice(0, 3).join(' '));
+}
+
+// ─── Intent Detection ────────────────────────────────────────
+// Augments scaffold output based on keywords in the user's description.
+
+interface DomainHint {
+  id: string;
+  match: (intention: string) => boolean;
+  deps?: Record<string, string>;
+  devDeps?: Record<string, string>;
+  bindings?: string[];
+  scripts?: Record<string, string>;
+  envInterface?: string[];
+  indexImports?: string[];
+  indexBody?: string;
+  extraFiles?: ScaffoldFile[];
+}
+
+const DOMAIN_HINTS: DomainHint[] = [
+  {
+    id: 'mcp-server',
+    match: (i) => /\bmcp\b/i.test(i) && /\bserver\b/i.test(i),
+    deps: { '@modelcontextprotocol/sdk': '^1.0.0' },
+    envInterface: ['// MCP server bindings'],
+    indexBody: `
+    // MCP SSE endpoint
+    if (url.pathname === '/sse' || url.pathname === '/mcp') {
+      // TODO: wire MCP server handler
+      // See: https://modelcontextprotocol.io/docs/server
+      return new Response('MCP SSE endpoint — wire server handler', {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      });
+    }
+
+    // MCP tool listing
+    if (url.pathname === '/tools') {
+      return Response.json({
+        tools: [
+          // TODO: define your MCP tools
+          { name: 'example_tool', description: 'An example tool', inputSchema: { type: 'object', properties: {} } },
+        ],
+      });
+    }`,
+  },
+  {
+    id: 'chatroom',
+    match: (i) => /\bchat\s*room\b/i.test(i) || (/\bchat\b/i.test(i) && /\broom\b/i.test(i)) || /\brealtime\b/i.test(i),
+    deps: {},
+    bindings: [
+      `\n[[durable_objects.bindings]]\nname = "CHATROOM"\nclass_name = "ChatRoom"`,
+      `\n[[migrations]]\ntag = "v1"\nnew_classes = ["ChatRoom"]`,
+    ],
+    envInterface: ['CHATROOM: DurableObjectNamespace;'],
+    indexBody: `
+    // WebSocket upgrade for chat
+    if (url.pathname.startsWith('/room/')) {
+      const roomId = url.pathname.split('/')[2] ?? 'default';
+      const id = env.CHATROOM.idFromName(roomId);
+      const stub = env.CHATROOM.get(id);
+      return stub.fetch(request);
+    }`,
+    extraFiles: [{
+      path: 'src/chatroom.ts',
+      content: `// Durable Object: ChatRoom
+// Each room is a persistent, named instance with WebSocket sessions.
+
+export class ChatRoom implements DurableObject {
+  private sessions: Set<WebSocket> = new Set();
+
+  constructor(private state: DurableObjectState, private env: Env) {}
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname.endsWith('/websocket')) {
+      const [client, server] = Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      this.sessions.add(server);
+
+      server.addEventListener('message', (event) => {
+        // Broadcast to all connected clients
+        for (const ws of this.sessions) {
+          if (ws !== server && ws.readyState === WebSocket.READY_STATE_OPEN) {
+            ws.send(typeof event.data === 'string' ? event.data : '');
+          }
+        }
+      });
+
+      server.addEventListener('close', () => {
+        this.sessions.delete(server);
+      });
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // Room info
+    return Response.json({
+      room: url.pathname.split('/').pop(),
+      connections: this.sessions.size,
+    });
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    for (const session of this.sessions) {
+      if (session !== ws && session.readyState === WebSocket.READY_STATE_OPEN) {
+        session.send(typeof message === 'string' ? message : '');
+      }
+    }
+  }
+
+  webSocketClose(ws: WebSocket): void {
+    this.sessions.delete(ws);
+  }
+}
+
+interface Env {}
+`,
+    }],
+  },
+  {
+    id: 'api',
+    match: (i) => /\bapi\b/i.test(i) || /\brest\b/i.test(i) || /\bendpoint/i.test(i),
+    deps: { 'hono': '^4.0.0' },
+    indexImports: ["import { Hono } from 'hono';"],
+    indexBody: `
+    // API routes (Hono)
+    // const app = new Hono<{ Bindings: Env }>();
+    // app.get('/api/v1/items', (c) => c.json({ items: [] }));
+    // return app.fetch(request, env, ctx);`,
+  },
+  {
+    id: 'cron',
+    match: (i) => /\bcron\b/i.test(i) || /\bschedul/i.test(i) || /\bperiodic/i.test(i),
+    scripts: {},
+    indexBody: `
+    // Scheduled handler (cron trigger)
+    // Configure in wrangler.toml: [triggers] crons = ["*/5 * * * *"]`,
+  },
+  {
+    id: 'auth',
+    match: (i) => /\bauth\b/i.test(i) || /\blogin\b/i.test(i) || /\bjwt\b/i.test(i),
+    indexBody: `
+    // Auth middleware
+    if (url.pathname.startsWith('/api/') && url.pathname !== '/api/health') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader?.startsWith('Bearer ')) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      // TODO: validate JWT or API key
+    }`,
+  },
+];
+
+function detectDomainHints(intention: string): DomainHint[] {
+  return DOMAIN_HINTS.filter(h => h.match(intention));
 }
 
 // ─── Template Renderers ───────────────────────────────────────
@@ -162,7 +316,7 @@ function renderStateAdf(facts: Facts, projectName: string): string {
 `;
 }
 
-function renderPackageJson(facts: Facts, projectName: string): string {
+function renderPackageJson(facts: Facts, projectName: string, hints: DomainHint[] = []): string {
   const runtimeName = str(facts, 'runtime_name');
   const testFramework = str(facts, 'test_plan_framework', 'vitest');
 
@@ -204,6 +358,13 @@ function renderPackageJson(facts: Facts, projectName: string): string {
     scripts.test = 'jest';
   }
 
+  // Merge domain-specific dependencies
+  for (const hint of hints) {
+    if (hint.deps) Object.assign(deps, hint.deps);
+    if (hint.devDeps) Object.assign(devDeps, hint.devDeps);
+    if (hint.scripts) Object.assign(scripts, hint.scripts);
+  }
+
   return JSON.stringify({
     name: projectName,
     version: '0.1.0',
@@ -214,7 +375,7 @@ function renderPackageJson(facts: Facts, projectName: string): string {
   }, null, 2);
 }
 
-function renderWranglerToml(facts: Facts, projectName: string): string {
+function renderWranglerToml(facts: Facts, projectName: string, hints: DomainHint[] = []): string {
   // Infer bindings from runtime card traits
   const bindings: string[] = [];
 
@@ -240,6 +401,11 @@ queue = "${projectName}-tasks"
 binding = "QUEUE"`);
   }
 
+  // Add domain-specific bindings
+  for (const hint of hints) {
+    if (hint.bindings) bindings.push(...hint.bindings);
+  }
+
   return `name = "${projectName}"
 main = "src/index.ts"
 compatibility_date = "${new Date().toISOString().split('T')[0]}"
@@ -248,12 +414,31 @@ ${bindings.join('\n')}
 `;
 }
 
-function renderIndexTs(facts: Facts): string {
+function renderIndexTs(facts: Facts, hints: DomainHint[] = []): string {
   const ifaceName = str(facts, 'interface_name');
   const reqName = str(facts, 'requirement_name');
   const threatMitigation = str(facts, 'threat_mitigation');
 
-  return `// ${reqName} — main entry point
+  // Collect domain-specific imports and route bodies
+  const imports: string[] = [];
+  const routeBodies: string[] = [];
+  const envFields: string[] = [];
+
+  for (const hint of hints) {
+    if (hint.indexImports) imports.push(...hint.indexImports);
+    if (hint.indexBody) routeBodies.push(hint.indexBody);
+    if (hint.envInterface) envFields.push(...hint.envInterface);
+  }
+
+  const importsBlock = imports.length > 0 ? imports.join('\n') + '\n\n' : '';
+  const routesBlock = routeBodies.length > 0 ? routeBodies.join('\n') + '\n' : '';
+  const envBlock = envFields.length > 0 ? '\n  ' + envFields.join('\n  ') : '\n  // TODO: add bindings from wrangler.toml';
+
+  // Check if chatroom hint is present — export the DO class
+  const hasChatroom = hints.some(h => h.id === 'chatroom');
+  const reExports = hasChatroom ? "\nexport { ChatRoom } from './chatroom';\n" : '';
+
+  return `${importsBlock}// ${reqName} — main entry point
 // UX pattern: ${ifaceName}
 // Security: ${threatMitigation || 'standard hardening'}
 
@@ -264,16 +449,15 @@ export default {
     if (url.pathname === '/health') {
       return Response.json({ status: 'ok', timestamp: new Date().toISOString() });
     }
-
+${routesBlock}
     // TODO: implement ${reqName} handler
     return Response.json({ error: 'not implemented' }, { status: 501 });
   },
 } satisfies ExportedHandler<Env>;
 
-interface Env {
-  // TODO: add bindings from wrangler.toml
+interface Env {${envBlock}
 }
-`;
+${reExports}`;
 }
 
 function renderTestFile(facts: Facts, projectName: string): string {
@@ -381,6 +565,7 @@ export function materializeScaffold(
   intention: string,
 ): MaterializerResult {
   const projectName = deriveProjectName(facts, intention);
+  const hints = detectDomainHints(intention);
 
   const files: ScaffoldFile[] = [
     // Governance first (.ai/ before src/)
@@ -389,12 +574,12 @@ export function materializeScaffold(
     { path: '.ai/state.adf', content: renderStateAdf(facts, projectName) },
 
     // Build config
-    { path: 'package.json', content: renderPackageJson(facts, projectName) },
+    { path: 'package.json', content: renderPackageJson(facts, projectName, hints) },
     { path: 'tsconfig.json', content: renderTsConfig() },
-    { path: 'wrangler.toml', content: renderWranglerToml(facts, projectName) },
+    { path: 'wrangler.toml', content: renderWranglerToml(facts, projectName, hints) },
 
     // Source
-    { path: 'src/index.ts', content: renderIndexTs(facts) },
+    { path: 'src/index.ts', content: renderIndexTs(facts, hints) },
 
     // Tests
     { path: 'test/index.test.ts', content: renderTestFile(facts, projectName) },
@@ -402,6 +587,13 @@ export function materializeScaffold(
     // Docs
     { path: 'README.md', content: renderReadme(facts, projectName, intention) },
   ];
+
+  // Add domain-specific extra files (e.g. chatroom.ts for Durable Objects)
+  for (const hint of hints) {
+    if (hint.extraFiles) {
+      files.push(...hint.extraFiles);
+    }
+  }
 
   const nextSteps = [
     `npm install`,
