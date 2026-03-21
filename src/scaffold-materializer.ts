@@ -513,7 +513,7 @@ function renderReadme(facts: Facts, projectName: string, intention: string): str
 
 > ${intention}
 
-Scaffolded by [TarotScript](https://github.com/Stackbilt-dev/tarotscript) scaffold-cast. Confidence: **${confidence}**.
+Scaffolded by [Stackbilt](https://stackbilt.dev). Confidence: **${confidence}**.
 
 ## Architecture
 
