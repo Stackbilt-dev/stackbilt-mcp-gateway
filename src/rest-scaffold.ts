@@ -86,40 +86,18 @@ export async function handleRestScaffold(
     analysis?: Record<string, unknown>;
   };
 
-  // Materialize files — try engine first, fall back to basic materializer
+  // Materialize files from TarotScript facts — always use the materializer
+  // (produces 9 deployment-ready files: wrangler.toml, .ai/ governance, typed handler, tests)
   let files: Array<{ path: string; content: string }> | undefined;
   let nextSteps: string[] | undefined;
-  let fileSource: 'engine' | 'basic' | 'none' = 'none';
+  let fileSource: 'materializer' | 'none' = 'none';
 
-  if (env.ENGINE) {
-    try {
-      const engineRes = await env.ENGINE.fetch(new Request('https://internal/scaffold', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: intention, tier: 'blessed' }),
-        signal: AbortSignal.timeout(10_000),
-      }));
-      if (engineRes.ok) {
-        const engineData = await engineRes.json() as {
-          files?: Array<{ path: string; content: string }>;
-          project_name?: string;
-        };
-        if (engineData.files && engineData.files.length > 0) {
-          files = engineData.files;
-          fileSource = 'engine';
-        }
-      }
-    } catch {
-      // Engine unavailable — fall through
-    }
-  }
-
-  if (!files && result.facts) {
+  if (result.facts) {
     try {
       const materialized = materializeScaffold(result.facts, intention);
       files = materialized.files;
       nextSteps = materialized.nextSteps;
-      fileSource = 'basic';
+      fileSource = 'materializer';
     } catch {
       // Non-fatal
     }
