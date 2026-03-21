@@ -59,6 +59,13 @@ export default {
       return addCorsHeaders(response);
     }
 
+    // REST API for CLI — bypass OAuthProvider, use Bearer token auth
+    if (url.pathname === '/api/scaffold' && request.method === 'POST') {
+      const { handleRestScaffold } = await import('./rest-scaffold.js');
+      const response = await handleRestScaffold(request, env);
+      return addCorsHeaders(response);
+    }
+
     // MCP Registry domain verification
     if (url.pathname === '/.well-known/mcp-registry-auth') {
       return addCorsHeaders(new Response(env.MCP_REGISTRY_AUTH ?? '', {
