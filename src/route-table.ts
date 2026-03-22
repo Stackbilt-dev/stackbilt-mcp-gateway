@@ -15,6 +15,8 @@ export interface BackendRoute {
   mcpPath: string;
   /** If true, backend uses REST API not MCP JSON-RPC — gateway translates */
   restApi?: boolean;
+  /** Backend timeout in ms. Defaults to 10_000. Image gen and scaffold need longer. */
+  timeout?: number;
 }
 
 export const ROUTE_TABLE: readonly BackendRoute[] = [
@@ -29,6 +31,7 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     product: 'img-forge',
     bindingKey: 'IMG_FORGE',
     mcpPath: '/mcp',
+    timeout: 60_000,
   },
   {
     prefix: 'scaffold',
@@ -36,6 +39,7 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     bindingKey: 'TAROTSCRIPT',
     mcpPath: '/run',
     restApi: true,
+    timeout: 60_000,
   },
   {
     prefix: 'visual',

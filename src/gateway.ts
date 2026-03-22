@@ -552,7 +552,7 @@ async function proxyToolCall(
         'X-Gateway-Scopes': session.scopes.join(','),
       },
       body: JSON.stringify(rpcBody),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(route.timeout ?? 10_000),
     }));
 
     if (!response.ok) {
