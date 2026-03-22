@@ -253,10 +253,14 @@ async function proxyRestToolCall(
     // Try engine templates (rich, stack-aware: real CRUD, migrations, auth)
     if (env.ENGINE) {
       try {
-        const engineRes = await env.ENGINE.fetch(new Request('https://internal/scaffold', {
+        const engineTier = session.tier === 'pro' || session.tier === 'enterprise' ? 'all' : 'blessed';
+        const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: intention, tier: 'blessed' }),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Service-Binding': env.SERVICE_BINDING_SECRET,
+          },
+          body: JSON.stringify({ description: intention, tier: engineTier }),
           signal: AbortSignal.timeout(10_000),
         }));
         if (engineRes.ok) {
