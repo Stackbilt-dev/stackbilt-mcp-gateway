@@ -1,0 +1,64 @@
+# stackbilt-mcp-gateway — Core Governance
+# Load-bearing constraints for AI agents operating on this codebase.
+
+## Auth Contract
+
+- OAuth 2.1 with PKCE via @cloudflare/workers-oauth-provider
+- All credential validation delegates to AUTH_SERVICE (stackbilt-auth) via Service Binding RPC
+- The gateway NEVER trusts client identity claims — server-side enforcement only
+- Two auth paths: OAuth token (validated by OAuthProvider) and API key (sb_live_* / sb_test_* prefix, validated by AUTH_SERVICE.validateApiKey)
+- JWT tokens validated via AUTH_SERVICE.validateJwt
+- REST endpoint (/api/scaffold) uses Bearer token auth, bypasses OAuthProvider
+
+## Identity Delegation Headers
+
+- Backend workers receive identity via trusted headers, not raw tokens
+- Required headers on every Service Binding fetch to backends:
+  - X-Gateway-Tenant-Id: tenant identifier from auth result
+  - X-Gateway-User-Id: user identifier from auth result
+  - X-Gateway-Tier: subscription tier (free | hobby | pro | enterprise)
+  - X-Gateway-Scopes: comma-separated scope list
+- These headers are ONLY trustworthy over Service Bindings (same-account, not internet-routable)
+
+## Service Binding Contracts
+
+- AUTH_SERVICE: RPC binding (AuthEntrypoint) — validateApiKey, validateJwt, authenticateUser, registerUser, provisionTenant, exchangeSocialCode
+- STACKBILDER: Fetcher — /mcp (MCP JSON-RPC), prefix "flow"
+- IMG_FORGE: Fetcher — /mcp (MCP JSON-RPC), prefix "image"
+- TAROTSCRIPT: Fetcher — /run (REST), prefix "scaffold"
+- VISUAL_QA: Fetcher — /analyze (REST), prefix "visual"
+- Adding a new product = one ROUTE_TABLE entry + one Service Binding in wrangler.toml
+
+## Tool Routing Rules
+
+- Every tool is namespaced: {prefix}_{action} (e.g., flow_create, image_generate)
+- Route resolution: match tool name prefix against ROUTE_TABLE entries
+- MCP backends: gateway proxies JSON-RPC tools/call with translated tool name
+- REST backends: gateway translates tool call into backend-specific POST request
+- Tool catalog is static (defined in tool-registry.ts) — backends are not queried at discovery time
+
+## Security Constitution
+
+- Every tool MUST declare an explicit RiskLevel: READ_ONLY | LOCAL_MUTATION | EXTERNAL_MUTATION | DESTRUCTIVE
+- Tools without a declared risk level are rejected at registration (buildCatalogFromSpecs skips them)
+- Risk levels live in TOOL_RISK_LEVELS map in route-table.ts
+- Tier-based access control: free/hobby restricted to draft+standard quality; pro/enterprise get all tiers
+
+## Audit Chain
+
+- Every tool invocation emits a structured AuditArtifact (trace_id, principal, tenant, tool, risk_level, outcome)
+- Secrets are redacted BEFORE emission — SECRET_PATTERNS scrub keys, tokens, hashes, passwords
+- Audit artifacts are both console-logged and queued to PLATFORM_EVENTS_QUEUE (fire-and-forget)
+- Error messages sanitized via sanitizeError before returning to clients
+
+## Session Management
+
+- Sessions stored in OAUTH_KV with 30-minute TTL (SESSION_TTL_SECONDS)
+- Session recovery: if session is expired but auth is valid, gateway auto-rebuilds it
+- Session ID returned via MCP-Session-Id header
+
+## Tenant Isolation
+
+- tenantId flows through the entire request lifecycle: auth -> session -> headers -> backend
+- Backends MUST scope all data access to the tenant identified in X-Gateway-Tenant-Id
+- Gateway does NOT cross-reference tenants — isolation is enforced at each layer independently
