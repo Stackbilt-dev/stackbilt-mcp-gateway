@@ -86,18 +86,46 @@ export async function handleRestScaffold(
     analysis?: Record<string, unknown>;
   };
 
-  // Materialize files from TarotScript facts — always use the materializer
-  // (produces 9 deployment-ready files: wrangler.toml, .ai/ governance, typed handler, tests)
+  // Materialize project files — try engine templates first, fall back to basic materializer
   let files: Array<{ path: string; content: string }> | undefined;
   let nextSteps: string[] | undefined;
-  let fileSource: 'materializer' | 'none' = 'none';
+  let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
-  if (result.facts) {
+  // Try engine templates (rich, stack-aware: real CRUD, migrations, auth)
+  if (env.ENGINE) {
+    try {
+      const engineTier = auth.tier === 'pro' || auth.tier === 'enterprise' ? 'all' : 'blessed';
+      const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Service-Binding': env.SERVICE_BINDING_SECRET,
+        },
+        body: JSON.stringify({ description: intention, tier: engineTier }),
+        signal: AbortSignal.timeout(10_000),
+      }));
+      if (engineRes.ok) {
+        const engineData = await engineRes.json() as {
+          files?: Array<{ path: string; content: string }>;
+          project_name?: string;
+        };
+        if (engineData.files && engineData.files.length > 0) {
+          files = engineData.files;
+          fileSource = 'engine';
+        }
+      }
+    } catch {
+      // Engine unavailable — fall through to basic materializer
+    }
+  }
+
+  // Fall back to basic materializer if engine didn't produce files
+  if (!files && result.facts) {
     try {
       const materialized = materializeScaffold(result.facts, intention);
       files = materialized.files;
       nextSteps = materialized.nextSteps;
-      fileSource = 'materializer';
+      fileSource = 'basic';
     } catch {
       // Non-fatal
     }
