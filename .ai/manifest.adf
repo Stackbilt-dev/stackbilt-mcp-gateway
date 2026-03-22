@@ -1,0 +1,9 @@
+# stackbilt-mcp-gateway ADF Manifest
+# MCP gateway on Cloudflare Workers — OAuth 2.1, tool routing, audit chain
+
+version: "0.1"
+project: "stackbilt-mcp-gateway"
+
+## Modules
+
+load core.adf always
