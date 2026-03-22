@@ -544,8 +544,10 @@ async function proxyToolCall(
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         // Pass identity context — backend trusts Service Binding
+        'X-Service-Binding': env.SERVICE_BINDING_SECRET,
         'X-Gateway-Tenant-Id': session.tenantId ?? '',
         'X-Gateway-User-Id': session.userId ?? '',
+        'X-Tenant-User-Id': session.userId ?? '',
         'X-Gateway-Tier': session.tier,
         'X-Gateway-Scopes': session.scopes.join(','),
       },
@@ -714,13 +716,14 @@ async function resolveAuth(
         tier: (tenant.tier ?? 'free') as Tier,
         scopes: ['generate', 'read'],
       };
-    } catch {
-      // Fallback: if tenant resolution fails, still authenticate with defaults
+    } catch (err) {
+      // Tenant resolution failed — cannot proceed without a tenantId.
+      // Backends reject empty tenant IDs, so failing here is better than
+      // silently forwarding requests that will 404 downstream.
+      console.error(`[gateway] provisionTenant failed for ${oauthProps.userId}: ${err instanceof Error ? err.message : String(err)}`);
       return {
-        authenticated: true,
-        userId: oauthProps.userId,
-        tier: 'free' as Tier,
-        scopes: ['generate', 'read'],
+        authenticated: false,
+        error: 'tenant_resolution_failed',
       };
     }
   }
