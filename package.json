@@ -2,6 +2,11 @@
   "name": "stackbilt-mcp-gateway",
   "version": "0.1.0",
   "private": true,
+  "description": "OAuth-authenticated MCP gateway for Stackbilt platform services",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Stackbilt-dev/stackbilt-mcp-gateway.git"
+  },
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -102,7 +102,7 @@ Returns the aggregated tool catalog from all backend adapters.
 {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 ```
 
-Tools are namespaced by product (e.g. `image.generate`, `flow.create`). Each tool includes a JSON Schema for its `inputSchema`.
+Tools are namespaced by product (e.g. `image_generate`, `flow_create`). Each tool includes a JSON Schema for its `inputSchema`.
 
 ### `tools/call`
 
@@ -113,7 +113,7 @@ Invokes a tool on the appropriate backend.
   "jsonrpc": "2.0", "id": 3,
   "method": "tools/call",
   "params": {
-    "name": "image.generate",
+    "name": "image_generate",
     "arguments": {"prompt": "A mountain at sunset"}
   }
 }
@@ -142,49 +142,49 @@ Client notification after initialization. Acknowledged silently.
 
 Routed to the `STACKBILDER` service binding (`edge-stack-architect-v2`).
 
-### `flow.create`
+### `flow_create`
 
 Create a new architecture flow.
 
 - **Risk level**: `LOCAL_MUTATION`
 - **Arguments**: Varies by flow type (prompt, configuration)
 
-### `flow.status`
+### `flow_status`
 
 Check the generation status of a flow.
 
 - **Risk level**: `READ_ONLY`
 - **Arguments**: `flowId`
 
-### `flow.summary`
+### `flow_summary`
 
 Get a summary of a completed flow.
 
 - **Risk level**: `READ_ONLY`
 - **Arguments**: `flowId`
 
-### `flow.quality`
+### `flow_quality`
 
 Run quality checks on a flow.
 
 - **Risk level**: `READ_ONLY`
 - **Arguments**: `flowId`
 
-### `flow.governance`
+### `flow_governance`
 
 Check governance compliance of a flow.
 
 - **Risk level**: `READ_ONLY`
 - **Arguments**: `flowId`
 
-### `flow.advance`
+### `flow_advance`
 
 Advance a flow to the next stage.
 
 - **Risk level**: `LOCAL_MUTATION`
 - **Arguments**: `flowId`
 
-### `flow.recover`
+### `flow_recover`
 
 Recover a failed flow.
 
@@ -197,21 +197,21 @@ Recover a failed flow.
 
 Routed to the `IMG_FORGE` service binding (`img-forge-mcp`).
 
-### `image.generate`
+### `image_generate`
 
 Generate an image from a text prompt.
 
 - **Risk level**: `EXTERNAL_MUTATION`
 - **Arguments**: `prompt` (string), plus optional model/quality parameters
 
-### `image.list_models`
+### `image_list_models`
 
 List available image generation models.
 
 - **Risk level**: `READ_ONLY`
 - **Arguments**: None
 
-### `image.check_job`
+### `image_check_job`
 
 Check the status of an image generation job.
 
@@ -220,12 +220,87 @@ Check the status of an image generation job.
 
 ---
 
+## Tools — TarotScript (Scaffold)
+
+Routed to the `TAROTSCRIPT` service binding (`tarotscript-worker`). REST API backend (gateway translates to/from MCP JSON-RPC). Timeout: 60s.
+
+### `scaffold_create`
+
+Create a new project scaffold from a prompt. Generates structured facts and deployable project files.
+
+- **Risk level**: `LOCAL_MUTATION`
+- **Arguments**: Varies by project type (prompt, configuration options)
+
+### `scaffold_classify`
+
+Classify a prompt or project description to determine the appropriate scaffold template.
+
+- **Risk level**: `READ_ONLY`
+- **Arguments**: Project description or prompt to classify
+
+### `scaffold_status`
+
+Check the status of a scaffold generation job.
+
+- **Risk level**: `READ_ONLY`
+- **Arguments**: `flowId` or scaffold job identifier
+
+### `scaffold_publish`
+
+Publish a completed scaffold to a GitHub repository.
+
+- **Risk level**: `EXTERNAL_MUTATION`
+- **Arguments**: Scaffold identifier, target repository details
+
+### `scaffold_deploy`
+
+Deploy a published scaffold to Cloudflare Workers.
+
+- **Risk level**: `EXTERNAL_MUTATION`
+- **Arguments**: Scaffold identifier, deployment configuration
+
+### `scaffold_import`
+
+Import an n8n workflow and convert it to a scaffold. Routed via the `TRANSPILER` service binding (`n8n-transpiler`).
+
+- **Risk level**: `LOCAL_MUTATION`
+- **Arguments**: n8n workflow JSON or URL
+
+---
+
+## Tools — Visual QA
+
+Routed to the `VISUAL_QA` service binding (`stackbilt-visual-qa`). REST API backend (gateway translates to/from MCP JSON-RPC).
+
+### `visual_screenshot`
+
+Capture a screenshot of a deployed page or URL.
+
+- **Risk level**: `LOCAL_MUTATION`
+- **Arguments**: URL or page identifier
+
+### `visual_analyze`
+
+Analyze a screenshot or page for visual quality, layout issues, and accessibility.
+
+- **Risk level**: `LOCAL_MUTATION`
+- **Arguments**: Screenshot or URL to analyze
+
+### `visual_pages`
+
+List available pages for a deployed project.
+
+- **Risk level**: `READ_ONLY`
+- **Arguments**: Project or deployment identifier
+
+---
+
 ## Tool Routing & SERVICE_BINDING_SECRET Pattern
 
 ### How Tool Routing Works
 
-1. **Registration**: On startup, the tool registry fetches `tools/list` from each backend service binding (STACKBILDER, IMG_FORGE)
-2. **Namespacing**: Tools are prefixed by product (`flow.*`, `image.*`) to avoid name collisions
+1. **Registration**: On startup, the tool registry fetches `tools/list` from each backend service binding (STACKBILDER, IMG_FORGE, TAROTSCRIPT, VISUAL_QA)
+2. **Namespacing**: Tools are prefixed by product (`flow_*`, `image_*`, `scaffold_*`, `visual_*`) to avoid name collisions
 3. **Route table**: A static mapping (`src/route-table.ts`) maps each tool name to its backend and risk level
 4. **Dispatch**: On `tools/call`, the gateway resolves the route, forwards the request to the correct service binding, and returns the result
 

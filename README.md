@@ -85,7 +85,7 @@ Deploys to the `mcp.stackbilt.dev` custom domain via Cloudflare Workers.
 | `STACKBILDER` | Service Binding | Route to `edge-stack-architect-v2` worker |
 | `IMG_FORGE` | Service Binding | Route to `img-forge-mcp` worker |
 | `OAUTH_KV` | KV Namespace | Stores social OAuth state (5-min TTL entries) |
-| `PLATFORM_EVENTS_QUEUE` | Queue | BizOps audit event pipeline (`stackbilt-user-events`) |
+| `PLATFORM_EVENTS_QUEUE` | Queue | Audit event pipeline (`stackbilt-user-events`) |
 | `MCP_REGISTRY_AUTH` | Variable | MCP Registry domain verification string (served at `/.well-known/mcp-registry-auth`) |
 
 Set secrets with:

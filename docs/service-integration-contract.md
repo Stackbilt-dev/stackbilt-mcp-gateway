@@ -95,8 +95,7 @@ Backends that trust the gateway's tenant resolution can use `X-Gateway-Tenant-Id
 4. **Contract tests**: Cross-worker integration tests that verify header propagation end-to-end. Currently only unit-tested per worker.
 5. **Observability**: Log the full header chain at each hop when errors occur, so the identity mismatch is visible in a single trace.
 
-### Incident History
+### Lessons Learned
 
-| Date | Issue | Resolution |
-|------|-------|------------|
-| 2026-03-22 | `TENANT_NOT_FOUND` on `image_generate` via MCP gateway | img-forge-mcp was reading `X-Gateway-Tenant-Id` (tenant UUID) instead of `X-Gateway-User-Id` (user ID). Gateway was also silently falling back to empty tenant on `provisionTenant()` errors. Fixed in both workers. |
+- Backend workers must read `X-Gateway-User-Id` (user ID), not `X-Gateway-Tenant-Id` (tenant UUID), when they need to call `resolveTenant()` or `provisionTenant()`. The tenant ID is the *output* of that call.
+- The gateway must fail requests explicitly when `provisionTenant()` errors, rather than silently falling back to an empty tenant.
