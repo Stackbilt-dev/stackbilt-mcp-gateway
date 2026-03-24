@@ -284,11 +284,10 @@ async function proxyRestToolCall(
             }
           }
         } else {
-          // Log engine failure for debugging (non-fatal)
-          console.error(`ENGINE /scaffold failed: ${engineRes.status} ${await engineRes.text().catch(() => '')}`);
+          const errText = await engineRes.text().catch(() => '');
+          console.error(`ENGINE /scaffold failed: ${engineRes.status} ${errText}`);
         }
       } catch (engineErr) {
-        // Engine unavailable — fall through to basic materializer
         console.error('ENGINE /scaffold error:', engineErr);
       }
     }

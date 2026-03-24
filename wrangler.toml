@@ -44,7 +44,7 @@ service = "n8n-transpiler"
 # Replace with your KV namespace ID — see https://developers.cloudflare.com/kv/get-started/
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "9c165be8754749e3b543458ae8e596db"
 
 # Custom domain — taken over from img-forge-mcp (ADR-039)
 [[routes]]
