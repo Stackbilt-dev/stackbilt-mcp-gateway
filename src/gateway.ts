@@ -250,7 +250,7 @@ async function proxyRestToolCall(
     let nextSteps: string[] | undefined;
     let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
-    // Try engine templates (rich, stack-aware: real CRUD, migrations, auth)
+    // Try engine templates (trait-composed: Ed25519, HMAC, MCP, CRUD — pattern-aware)
     if (env.ENGINE) {
       try {
         const engineTier = session.tier === 'pro' || session.tier === 'enterprise' ? 'all' : 'blessed';
@@ -260,17 +260,31 @@ async function proxyRestToolCall(
             'Content-Type': 'application/json',
             'X-Service-Binding': env.SERVICE_BINDING_SECRET,
           },
-          body: JSON.stringify({ description: intention, tier: engineTier }),
+          body: JSON.stringify({
+            description: intention,
+            tier: engineTier,
+            project_name: (result.facts?.project_name as string) || undefined,
+          }),
           signal: AbortSignal.timeout(10_000),
         }));
         if (engineRes.ok) {
           const engineData = await engineRes.json() as {
             files?: Array<{ path: string; content: string }>;
             project_name?: string;
+            pattern?: string;
+            routes?: string[];
+            integrations?: string[];
           };
           if (engineData.files && engineData.files.length > 0) {
             files = engineData.files;
             fileSource = 'engine';
+            // Enrich facts with engine-detected pattern metadata
+            if (result.facts) {
+              if (engineData.pattern) result.facts.engine_pattern = engineData.pattern;
+              if (engineData.routes?.length) result.facts.engine_routes = engineData.routes;
+              if (engineData.integrations?.length) result.facts.engine_integrations = engineData.integrations;
+              if (engineData.project_name) result.facts.engine_project_name = engineData.project_name;
+            }
           }
         }
       } catch {
@@ -278,13 +292,25 @@ async function proxyRestToolCall(
       }
     }
 
-    // Fall back to basic materializer if engine didn't produce files
-    if (!files && result.facts) {
+    // Merge governance files from materializer with engine code files,
+    // or fall back to materializer entirely if engine didn't produce files
+    if (result.facts) {
       try {
         const materialized = materializeScaffold(result.facts, intention);
-        files = materialized.files;
-        nextSteps = materialized.nextSteps;
-        fileSource = 'basic';
+        if (!files) {
+          // Engine didn't produce files — use materializer output entirely
+          files = materialized.files;
+          nextSteps = materialized.nextSteps;
+          fileSource = 'basic';
+        } else {
+          // Engine produced code files — merge in governance (.ai/) files from materializer
+          const enginePaths = new Set(files.map(f => f.path));
+          const govFiles = materialized.files.filter(f => f.path.startsWith('.ai/') && !enginePaths.has(f.path));
+          if (govFiles.length > 0) {
+            files = [...files, ...govFiles];
+          }
+          nextSteps = materialized.nextSteps;
+        }
       } catch {
         // Materializer failure is non-fatal — return facts without files
       }
