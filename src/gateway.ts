@@ -254,17 +254,14 @@ async function proxyRestToolCall(
     if (env.ENGINE) {
       try {
         const engineTier = session.tier === 'pro' || session.tier === 'enterprise' ? 'all' : 'blessed';
+        const engineBody = JSON.stringify({
+          description: intention,
+          tier: engineTier,
+        });
         const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Service-Binding': env.SERVICE_BINDING_SECRET,
-          },
-          body: JSON.stringify({
-            description: intention,
-            tier: engineTier,
-            project_name: (result.facts?.project_name as string) || undefined,
-          }),
+          headers: { 'Content-Type': 'application/json' },
+          body: engineBody,
           signal: AbortSignal.timeout(10_000),
         }));
         if (engineRes.ok) {
@@ -286,9 +283,13 @@ async function proxyRestToolCall(
               if (engineData.project_name) result.facts.engine_project_name = engineData.project_name;
             }
           }
+        } else {
+          // Log engine failure for debugging (non-fatal)
+          console.error(`ENGINE /scaffold failed: ${engineRes.status} ${await engineRes.text().catch(() => '')}`);
         }
-      } catch {
+      } catch (engineErr) {
         // Engine unavailable — fall through to basic materializer
+        console.error('ENGINE /scaffold error:', engineErr);
       }
     }
 
