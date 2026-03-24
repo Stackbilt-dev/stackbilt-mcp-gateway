@@ -40,6 +40,23 @@ service = "stackbilt-visual-qa"
 binding = "TRANSPILER"
 service = "n8n-transpiler"
 
+# MCP Toolbox servers
+[[services]]
+binding = "MCP_CLOUDFLARE_OPS"
+service = "mcp-cloudflare-ops"
+
+[[services]]
+binding = "MCP_DATABASE"
+service = "mcp-database"
+
+[[services]]
+binding = "MCP_MEMORY"
+service = "mcp-memory"
+
+[[services]]
+binding = "MCP_GIT_OPS"
+service = "mcp-git-ops"
+
 # OAuth KV (shared namespace with img-forge-mcp during transition)
 # Replace with your KV namespace ID — see https://developers.cloudflare.com/kv/get-started/
 [[kv_namespaces]]

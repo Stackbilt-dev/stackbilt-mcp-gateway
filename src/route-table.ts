@@ -10,7 +10,7 @@ export interface BackendRoute {
   /** Human label for discovery/errors */
   product: string;
   /** Key in GatewayEnv for the Service Binding */
-  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER' | 'VISUAL_QA' | 'TRANSPILER'>;
+  bindingKey: keyof Pick<GatewayEnv, 'STACKBILDER' | 'IMG_FORGE' | 'TAROTSCRIPT' | 'ENGINE' | 'DEPLOYER' | 'VISUAL_QA' | 'TRANSPILER' | 'MCP_CLOUDFLARE_OPS' | 'MCP_DATABASE' | 'MCP_MEMORY' | 'MCP_GIT_OPS'>;
   /** Path on the backend worker that handles MCP JSON-RPC */
   mcpPath: string;
   /** If true, backend uses REST API not MCP JSON-RPC — gateway translates */
@@ -48,6 +48,35 @@ export const ROUTE_TABLE: readonly BackendRoute[] = [
     mcpPath: '/analyze',
     restApi: true,
   },
+
+  // ─── MCP Toolbox servers ────────────────────────────────────
+  {
+    prefix: 'cfops',
+    product: 'Cloudflare Ops',
+    bindingKey: 'MCP_CLOUDFLARE_OPS',
+    mcpPath: '/mcp',
+    timeout: 30_000,
+  },
+  {
+    prefix: 'db',
+    product: 'Database',
+    bindingKey: 'MCP_DATABASE',
+    mcpPath: '/mcp',
+    timeout: 30_000,
+  },
+  {
+    prefix: 'mem',
+    product: 'Memory',
+    bindingKey: 'MCP_MEMORY',
+    mcpPath: '/mcp',
+  },
+  {
+    prefix: 'git',
+    product: 'Git Ops',
+    bindingKey: 'MCP_GIT_OPS',
+    mcpPath: '/mcp',
+    timeout: 30_000,
+  },
 ] as const;
 
 // ─── Tool risk level registry (Security Constitution) ─────────
@@ -82,6 +111,53 @@ export const TOOL_RISK_LEVELS: Record<string, RiskLevel> = {
 
   // n8n Transpiler tools
   'scaffold_import': 'LOCAL_MUTATION',
+
+  // ─── MCP Toolbox: Cloudflare Ops ────────────────────────────
+  'cfops_workers_list': 'READ_ONLY',
+  'cfops_workers_deploy': 'EXTERNAL_MUTATION',
+  'cfops_workers_delete': 'DESTRUCTIVE',
+  'cfops_kv_get': 'READ_ONLY',
+  'cfops_kv_put': 'EXTERNAL_MUTATION',
+  'cfops_kv_list': 'READ_ONLY',
+  'cfops_kv_delete': 'EXTERNAL_MUTATION',
+  'cfops_d1_query': 'EXTERNAL_MUTATION',
+  'cfops_d1_list': 'READ_ONLY',
+  'cfops_r2_put': 'EXTERNAL_MUTATION',
+  'cfops_r2_get': 'READ_ONLY',
+  'cfops_r2_list': 'READ_ONLY',
+  'cfops_r2_delete': 'EXTERNAL_MUTATION',
+  'cfops_ops_health': 'READ_ONLY',
+
+  // ─── MCP Toolbox: Database ──────────────────────────────────
+  'db_query': 'EXTERNAL_MUTATION',
+  'db_list': 'READ_ONLY',
+  'db_tables': 'READ_ONLY',
+  'db_schema': 'READ_ONLY',
+  'db_export': 'READ_ONLY',
+  'db_import': 'EXTERNAL_MUTATION',
+  'db_backup_create': 'LOCAL_MUTATION',
+  'db_backup_restore': 'DESTRUCTIVE',
+  'db_cache_stats': 'READ_ONLY',
+
+  // ─── MCP Toolbox: Memory ────────────────────────────────────
+  'mem_memory_store': 'LOCAL_MUTATION',
+  'mem_memory_retrieve': 'READ_ONLY',
+  'mem_memory_search': 'READ_ONLY',
+  'mem_memory_list': 'READ_ONLY',
+  'mem_memory_delete': 'LOCAL_MUTATION',
+  'mem_memory_forget': 'DESTRUCTIVE',
+
+  // ─── MCP Toolbox: Git Ops ──────────────────────────────────
+  'git_github_list_repos': 'READ_ONLY',
+  'git_github_get_repo': 'READ_ONLY',
+  'git_github_create_pr': 'EXTERNAL_MUTATION',
+  'git_github_list_prs': 'READ_ONLY',
+  'git_github_get_pr': 'READ_ONLY',
+  'git_github_list_branches': 'READ_ONLY',
+  'git_github_create_branch': 'LOCAL_MUTATION',
+  'git_github_get_diff': 'READ_ONLY',
+  'git_github_get_file': 'READ_ONLY',
+  'git_github_rate_limit': 'READ_ONLY',
 };
 
 /** Resolve a tool name to its backend route. Returns null if no prefix matches. */

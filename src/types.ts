@@ -92,6 +92,12 @@ export interface GatewayEnv {
   VISUAL_QA?: Fetcher;
   TRANSPILER?: Fetcher;
 
+  // MCP Toolbox servers
+  MCP_CLOUDFLARE_OPS?: Fetcher;
+  MCP_DATABASE?: Fetcher;
+  MCP_MEMORY?: Fetcher;
+  MCP_GIT_OPS?: Fetcher;
+
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;
   OAUTH_KV: KVNamespace;
