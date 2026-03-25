@@ -308,6 +308,7 @@ async function proxyRestToolCall(
             pattern?: string;
             routes?: string[];
             integrations?: string[];
+            parser_confidence?: number;
           };
           if (engineData.files && engineData.files.length > 0) {
             files = engineData.files;
@@ -318,6 +319,7 @@ async function proxyRestToolCall(
               if (engineData.routes?.length) result.facts.engine_routes = engineData.routes;
               if (engineData.integrations?.length) result.facts.engine_integrations = engineData.integrations;
               if (engineData.project_name) result.facts.engine_project_name = engineData.project_name;
+              if (engineData.parser_confidence != null) result.facts.parser_confidence = engineData.parser_confidence;
             }
 
             // Log Tier 2 vs engine divergence for pattern mining (#102)
