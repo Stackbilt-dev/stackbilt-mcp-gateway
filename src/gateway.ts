@@ -254,12 +254,12 @@ async function proxyRestToolCall(
     let nextSteps: string[] | undefined;
     let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
-    // Tier 2: Classify intention if explicit params weren't provided
+    // Tier 2: Classify intention via Cerebras (~2,200 tok/s) if explicit params weren't provided
     let classification: IntentClassification | null = null;
     const hasExplicitParams = a.pattern || a.routes || a.integrations;
-    if (!hasExplicitParams && env.AI) {
+    if (!hasExplicitParams && env.CEREBRAS_API_KEY) {
       try {
-        classification = await classifyIntention(intention, env.AI);
+        classification = await classifyIntention(intention, env.CEREBRAS_API_KEY);
         if (classification && result.facts) {
           result.facts.classification_confidence = classification.confidence;
           if (classification.ambiguous?.length) {

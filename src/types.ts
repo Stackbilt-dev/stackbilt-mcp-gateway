@@ -92,8 +92,8 @@ export interface GatewayEnv {
   VISUAL_QA?: Fetcher;
   TRANSPILER?: Fetcher;
 
-  // Workers AI — Tier 2 intent classification
-  AI?: Ai;
+  // Cerebras — Tier 2 intent classification (~2,200 tok/s)
+  CEREBRAS_API_KEY?: string;
 
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;

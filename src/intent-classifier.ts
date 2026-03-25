@@ -4,8 +4,8 @@
 // scaffold intentions. Feeds the same BuildRequest contract as explicit
 // params (Tier 1) and regex fallback (Tier 3).
 //
+// Uses Cerebras inference (~2,200 tok/s) for sub-200ms classification.
 // The composer doesn't know or care which tier produced the input.
-// One contract, multiple input paths, zero ambiguity at composition layer.
 
 export interface IntentClassification {
   pattern?: string;
@@ -51,28 +51,40 @@ Example input: "Multi-tenant helpdesk API. D1 for tickets and organizations. R2 
 Example output: {"pattern":"rest-api","entities":["tickets","organizations"],"routes":[],"integrations":["jwt"],"constraints":{"needsDatabase":true,"needsStorage":true,"needsAuth":true},"projectName":"helpdesk-api","confidence":0.95,"ambiguous":[]}`;
 
 /**
- * Classify a scaffold intention using Workers AI.
+ * Classify a scaffold intention using Cerebras inference (~2,200 tok/s).
  * Returns structured fields that map directly to BuildRequest.
- * Falls back gracefully — returns null if AI unavailable or confidence too low.
+ * Falls back gracefully — returns null if unavailable or confidence too low.
  */
 export async function classifyIntention(
   intention: string,
-  ai: Ai,
+  apiKey: string,
   confidenceThreshold: number = 0.7,
 ): Promise<IntentClassification | null> {
   try {
-    const response = await (ai as any).run('@cf/meta/llama-3.1-8b-instruct', {
-      messages: [
-        { role: 'system', content: CLASSIFICATION_PROMPT },
-        { role: 'user', content: intention },
-      ],
-      max_tokens: 512,
-      temperature: 0,
+    const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b',
+        messages: [
+          { role: 'system', content: CLASSIFICATION_PROMPT },
+          { role: 'user', content: intention },
+        ],
+        max_tokens: 512,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(5_000),
     });
 
-    const text = typeof response === 'string'
-      ? response
-      : (response as { response?: string }).response ?? '';
+    if (!response.ok) return null;
+
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data.choices?.[0]?.message?.content ?? '';
 
     // Extract JSON from response (may have markdown fences)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -97,7 +109,7 @@ export async function classifyIntention(
       ambiguous: Array.isArray(parsed.ambiguous) ? parsed.ambiguous : undefined,
     };
   } catch {
-    // AI unavailable or parse failure — fall through to Tier 3
+    // Cerebras unavailable or parse failure — fall through to Tier 3
     return null;
   }
 }
