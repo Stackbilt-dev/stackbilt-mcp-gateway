@@ -291,6 +291,7 @@ async function proxyRestToolCall(
           if (!engineReq.routes && classification.routes?.length) engineReq.routes = classification.routes;
           if (!engineReq.integrations && classification.integrations?.length) engineReq.integrations = classification.integrations;
           if (classification.projectName) engineReq.project_name = classification.projectName;
+          if (classification.entities?.length) engineReq.entities = classification.entities;
           if (classification.constraints) engineReq.constraints = classification.constraints;
         }
         const engineBody = JSON.stringify(engineReq);
