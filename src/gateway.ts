@@ -11,6 +11,7 @@ import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAu
 import { materializeScaffold } from './scaffold-materializer.js';
 import { publishToGitHub } from './scaffold-publish.js';
 import { classifyIntention, type IntentClassification } from './intent-classifier.js';
+import { logDivergence } from './divergence-logger.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -316,6 +317,11 @@ async function proxyRestToolCall(
               if (engineData.routes?.length) result.facts.engine_routes = engineData.routes;
               if (engineData.integrations?.length) result.facts.engine_integrations = engineData.integrations;
               if (engineData.project_name) result.facts.engine_project_name = engineData.project_name;
+            }
+
+            // Log Tier 2 vs engine divergence for pattern mining (#102)
+            if (classification && env.OAUTH_KV) {
+              logDivergence(env.OAUTH_KV, intention, classification, engineData);
             }
           }
         } else {
