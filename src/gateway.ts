@@ -255,54 +255,38 @@ async function proxyRestToolCall(
     let nextSteps: string[] | undefined;
     let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
-    // Tier 2: Classify intention via Cerebras (~2,200 tok/s) if explicit params weren't provided
-    let classification: IntentClassification | null = null;
-    const hasExplicitParams = a.pattern || a.routes || a.integrations;
-    if (!hasExplicitParams && env.CEREBRAS_API_KEY) {
-      try {
-        classification = await classifyIntention(intention, env.CEREBRAS_API_KEY);
-        if (classification && result.facts) {
-          result.facts.classification_confidence = classification.confidence;
-          if (classification.ambiguous?.length) {
-            result.facts.classification_ambiguous = classification.ambiguous;
-          }
-        }
-      } catch {
-        // AI unavailable — fall through to Tier 3 (regex in engine)
-      }
-    }
+    // Three-tier scaffold resolution:
+    //   Tier 1: Explicit params from caller (pattern, routes, integrations)
+    //   Tier 2: Cerebras LLM classification (~100ms, $0.0002/call)
+    //   Tier 3: Regex in engine parsePRD (0ms, $0)
+    //
+    // Optimization: call engine first (Tier 3, ~150ms). If parser_confidence >= 0.75,
+    // skip Tier 2 entirely. If low confidence, call Cerebras and re-call engine with
+    // classified fields. This cuts ~30% of LLM calls for well-matched patterns.
 
-    // Build engine request — merge Tier 1 explicit params > Tier 2 classification > Tier 3 regex
+    const hasExplicitParams = a.pattern || a.routes || a.integrations;
+    let classification: IntentClassification | null = null;
+    const CONFIDENCE_THRESHOLD = 0.75;
+
     if (env.ENGINE) {
       try {
         const engineTier = session.tier === 'pro' || session.tier === 'enterprise' ? 'all' : 'blessed';
-        // Build engine request: Tier 1 (explicit) > Tier 2 (classified) > Tier 3 (regex in engine)
-        const engineReq: Record<string, unknown> = {
-          description: intention,
-          tier: engineTier,
-        };
-        // Tier 1: explicit params from caller (highest priority)
-        if (a.pattern) engineReq.pattern = a.pattern;
-        if (a.routes) engineReq.routes = a.routes;
-        if (a.integrations) engineReq.integrations = a.integrations;
-        // Tier 2: LLM classification (fills gaps not covered by Tier 1)
-        if (classification) {
-          if (!engineReq.pattern && classification.pattern) engineReq.pattern = classification.pattern;
-          if (!engineReq.routes && classification.routes?.length) engineReq.routes = classification.routes;
-          if (!engineReq.integrations && classification.integrations?.length) engineReq.integrations = classification.integrations;
-          if (classification.projectName) engineReq.project_name = classification.projectName;
-          if (classification.entities?.length) engineReq.entities = classification.entities;
-          if (classification.constraints) engineReq.constraints = classification.constraints;
-        }
-        const engineBody = JSON.stringify(engineReq);
-        const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
+
+        // Step 1: Call engine with Tier 1 explicit params only (Tier 3 regex runs inside)
+        const baseReq: Record<string, unknown> = { description: intention, tier: engineTier };
+        if (a.pattern) baseReq.pattern = a.pattern;
+        if (a.routes) baseReq.routes = a.routes;
+        if (a.integrations) baseReq.integrations = a.integrations;
+
+        const baseRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: engineBody,
+          body: JSON.stringify(baseReq),
           signal: AbortSignal.timeout(10_000),
         }));
-        if (engineRes.ok) {
-          const engineData = await engineRes.json() as {
+
+        if (baseRes.ok) {
+          const engineData = await baseRes.json() as {
             files?: Array<{ path: string; content: string }>;
             project_name?: string;
             pattern?: string;
@@ -310,10 +294,60 @@ async function proxyRestToolCall(
             integrations?: string[];
             parser_confidence?: number;
           };
+
+          const parserConfidence = engineData.parser_confidence ?? 0;
+          const needsTier2 = !hasExplicitParams && parserConfidence < CONFIDENCE_THRESHOLD && env.CEREBRAS_API_KEY;
+
+          if (needsTier2) {
+            // Step 2: Tier 3 not confident — call Cerebras for LLM classification
+            try {
+              classification = await classifyIntention(intention, env.CEREBRAS_API_KEY!);
+            } catch {
+              // Cerebras unavailable — use Tier 3 output as-is
+            }
+
+            if (classification) {
+              // Step 3: Re-call engine with Tier 2 classified fields
+              const enrichedReq: Record<string, unknown> = { ...baseReq };
+              if (!enrichedReq.pattern && classification.pattern) enrichedReq.pattern = classification.pattern;
+              if (!enrichedReq.routes && classification.routes?.length) enrichedReq.routes = classification.routes;
+              if (!enrichedReq.integrations && classification.integrations?.length) enrichedReq.integrations = classification.integrations;
+              if (classification.projectName) enrichedReq.project_name = classification.projectName;
+              if (classification.entities?.length) enrichedReq.entities = classification.entities;
+              if (classification.constraints) enrichedReq.constraints = classification.constraints;
+
+              const enrichedRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(enrichedReq),
+                signal: AbortSignal.timeout(10_000),
+              }));
+
+              if (enrichedRes.ok) {
+                const enrichedData = await enrichedRes.json() as typeof engineData;
+                // Use enriched result instead
+                Object.assign(engineData, enrichedData);
+              }
+
+              if (result.facts) {
+                result.facts.classification_confidence = classification.confidence;
+                result.facts.tier2_invoked = true;
+                if (classification.ambiguous?.length) {
+                  result.facts.classification_ambiguous = classification.ambiguous;
+                }
+              }
+            }
+          } else if (result.facts) {
+            result.facts.tier2_invoked = false;
+            result.facts.tier2_skip_reason = parserConfidence >= CONFIDENCE_THRESHOLD
+              ? `parser_confidence ${parserConfidence} >= ${CONFIDENCE_THRESHOLD}`
+              : 'explicit_params';
+          }
+
+          // Materialize files from final engine result
           if (engineData.files && engineData.files.length > 0) {
             files = engineData.files;
             fileSource = 'engine';
-            // Enrich facts with engine-detected pattern metadata
             if (result.facts) {
               if (engineData.pattern) result.facts.engine_pattern = engineData.pattern;
               if (engineData.routes?.length) result.facts.engine_routes = engineData.routes;
@@ -322,14 +356,14 @@ async function proxyRestToolCall(
               if (engineData.parser_confidence != null) result.facts.parser_confidence = engineData.parser_confidence;
             }
 
-            // Log Tier 2 vs engine divergence for pattern mining (#102)
+            // Log divergence for pattern mining (#102)
             if (classification && env.OAUTH_KV) {
               logDivergence(env.OAUTH_KV, intention, classification, engineData);
             }
           }
         } else {
-          const errText = await engineRes.text().catch(() => '');
-          console.error(`ENGINE /scaffold failed: ${engineRes.status} ${errText}`);
+          const errText = await baseRes.text().catch(() => '');
+          console.error(`ENGINE /scaffold failed: ${baseRes.status} ${errText}`);
         }
       } catch (engineErr) {
         console.error('ENGINE /scaffold error:', engineErr);
