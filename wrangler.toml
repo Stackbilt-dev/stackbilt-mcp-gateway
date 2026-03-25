@@ -40,6 +40,10 @@ service = "stackbilt-visual-qa"
 binding = "TRANSPILER"
 service = "n8n-transpiler"
 
+# Workers AI — Tier 2 intent classification for scaffold_create
+[ai]
+binding = "AI"
+
 # OAuth KV (shared namespace with img-forge-mcp during transition)
 # Replace with your KV namespace ID — see https://developers.cloudflare.com/kv/get-started/
 [[kv_namespaces]]

@@ -10,6 +10,7 @@ import { toBackendToolName, buildAggregatedCatalog, validateToolArguments } from
 import { type AuditArtifact, generateTraceId, summarizeInput, emitAudit, queueAuditEvent } from './audit.js';
 import { materializeScaffold } from './scaffold-materializer.js';
 import { publishToGitHub } from './scaffold-publish.js';
+import { classifyIntention, type IntentClassification } from './intent-classifier.js';
 
 const MCP_PROTOCOL_VERSION = '2025-03-26';
 const JSON_RPC_PARSE_ERROR = -32700;
@@ -245,19 +246,53 @@ async function proxyRestToolCall(
       analysis?: Record<string, unknown>;
     };
 
-    // Materialize project files — try engine templates first, fall back to basic materializer
+    // Materialize project files — three-tier input resolution:
+    //   Tier 1: Explicit params from caller (pattern, routes, integrations)
+    //   Tier 2: LLM classification of free text (this block)
+    //   Tier 3: Regex fallback in engine's parsePRD
     let files: Array<{ path: string; content: string }> | undefined;
     let nextSteps: string[] | undefined;
     let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
-    // Try engine templates (trait-composed: Ed25519, HMAC, MCP, CRUD — pattern-aware)
+    // Tier 2: Classify intention if explicit params weren't provided
+    let classification: IntentClassification | null = null;
+    const hasExplicitParams = a.pattern || a.routes || a.integrations;
+    if (!hasExplicitParams && env.AI) {
+      try {
+        classification = await classifyIntention(intention, env.AI);
+        if (classification && result.facts) {
+          result.facts.classification_confidence = classification.confidence;
+          if (classification.ambiguous?.length) {
+            result.facts.classification_ambiguous = classification.ambiguous;
+          }
+        }
+      } catch {
+        // AI unavailable — fall through to Tier 3 (regex in engine)
+      }
+    }
+
+    // Build engine request — merge Tier 1 explicit params > Tier 2 classification > Tier 3 regex
     if (env.ENGINE) {
       try {
         const engineTier = session.tier === 'pro' || session.tier === 'enterprise' ? 'all' : 'blessed';
-        const engineBody = JSON.stringify({
+        // Build engine request: Tier 1 (explicit) > Tier 2 (classified) > Tier 3 (regex in engine)
+        const engineReq: Record<string, unknown> = {
           description: intention,
           tier: engineTier,
-        });
+        };
+        // Tier 1: explicit params from caller (highest priority)
+        if (a.pattern) engineReq.pattern = a.pattern;
+        if (a.routes) engineReq.routes = a.routes;
+        if (a.integrations) engineReq.integrations = a.integrations;
+        // Tier 2: LLM classification (fills gaps not covered by Tier 1)
+        if (classification) {
+          if (!engineReq.pattern && classification.pattern) engineReq.pattern = classification.pattern;
+          if (!engineReq.routes && classification.routes?.length) engineReq.routes = classification.routes;
+          if (!engineReq.integrations && classification.integrations?.length) engineReq.integrations = classification.integrations;
+          if (classification.projectName) engineReq.project_name = classification.projectName;
+          if (classification.constraints) engineReq.constraints = classification.constraints;
+        }
+        const engineBody = JSON.stringify(engineReq);
         const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

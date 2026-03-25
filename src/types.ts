@@ -92,6 +92,9 @@ export interface GatewayEnv {
   VISUAL_QA?: Fetcher;
   TRANSPILER?: Fetcher;
 
+  // Workers AI — Tier 2 intent classification
+  AI?: Ai;
+
   // OAuth
   OAUTH_PROVIDER: OAuthHelpers;
   OAUTH_KV: KVNamespace;
