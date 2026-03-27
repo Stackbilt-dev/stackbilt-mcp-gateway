@@ -296,14 +296,72 @@ async function proxyRestToolCall(
           };
 
           const parserConfidence = engineData.parser_confidence ?? 0;
-          const needsTier2 = !hasExplicitParams && parserConfidence < CONFIDENCE_THRESHOLD && env.CEREBRAS_API_KEY;
+          const needsClassification = !hasExplicitParams && parserConfidence < CONFIDENCE_THRESHOLD;
 
-          if (needsTier2) {
-            // Step 2: Tier 3 not confident — call Cerebras for LLM classification
-            try {
-              classification = await classifyIntention(intention, env.CEREBRAS_API_KEY!);
-            } catch {
-              // Cerebras unavailable — use Tier 3 output as-is
+          if (needsClassification) {
+            // Step 2a: Try TarotScript-native classification first (<1ms, $0)
+            if (binding) {
+              try {
+                const classifyRes = await binding.fetch(new Request('https://internal/classify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ intention }),
+                  signal: AbortSignal.timeout(5_000),
+                }));
+
+                if (classifyRes.ok) {
+                  const tsResult = await classifyRes.json() as {
+                    classification: { pattern: string; method: string; confidence: string; vocab_signal: string; vocab_score: number; relevance_score: number };
+                    traits: { route_shape: string; verification: string; dispatch: string; trigger: string; bindings: string; framework: string; side_artifacts: string; default_routes: string };
+                    tier2_recommended: boolean;
+                  };
+
+                  if (!tsResult.tier2_recommended) {
+                    // TarotScript classified with high/medium confidence — map to IntentClassification
+                    const patternSlug = tsResult.classification.pattern.toLowerCase().replace(/\s+/g, '-');
+                    const routes = tsResult.traits.default_routes !== 'none'
+                      ? tsResult.traits.default_routes.split(',').map(r => r.trim())
+                      : undefined;
+                    const integrations: string[] = [];
+                    if (tsResult.traits.verification !== 'none') integrations.push(tsResult.traits.verification);
+                    const bindings = tsResult.traits.bindings !== 'none' ? tsResult.traits.bindings.split(',') : [];
+
+                    classification = {
+                      pattern: patternSlug,
+                      routes,
+                      integrations: integrations.length ? integrations : undefined,
+                      constraints: {
+                        needsDatabase: bindings.includes('d1'),
+                        needsStorage: bindings.includes('r2'),
+                        needsCache: bindings.includes('kv'),
+                        needsQueue: bindings.includes('queues'),
+                        needsCron: tsResult.traits.trigger === 'scheduled',
+                        needsRealtime: bindings.includes('durable_objects'),
+                        needsAuth: tsResult.traits.verification !== 'none',
+                      },
+                      confidence: tsResult.classification.confidence === 'high' ? 0.95 : 0.75,
+                    };
+
+                    if (result.facts) {
+                      result.facts.classification_source = 'tarotscript';
+                      result.facts.classification_method = tsResult.classification.method;
+                      result.facts.vocab_signal = tsResult.classification.vocab_signal;
+                      result.facts.vocab_score = tsResult.classification.vocab_score;
+                    }
+                  }
+                }
+              } catch {
+                // /classify unavailable — fall through to Cerebras
+              }
+            }
+
+            // Step 2b: Only call Cerebras if TarotScript didn't resolve
+            if (!classification && env.CEREBRAS_API_KEY) {
+              try {
+                classification = await classifyIntention(intention, env.CEREBRAS_API_KEY!);
+              } catch {
+                // Cerebras unavailable — use Tier 3 output as-is
+              }
             }
 
             if (classification) {
@@ -331,7 +389,7 @@ async function proxyRestToolCall(
 
               if (result.facts) {
                 result.facts.classification_confidence = classification.confidence;
-                result.facts.tier2_invoked = true;
+                result.facts.tier2_invoked = result.facts.classification_source !== 'tarotscript';
                 if (classification.ambiguous?.length) {
                   result.facts.classification_ambiguous = classification.ambiguous;
                 }

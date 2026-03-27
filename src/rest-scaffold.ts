@@ -91,17 +91,58 @@ export async function handleRestScaffold(
   let nextSteps: string[] | undefined;
   let fileSource: 'engine' | 'basic' | 'none' = 'none';
 
+  // Classify intention via TarotScript-native classification (#102 M5)
+  let classifiedPattern: string | undefined;
+  let classifiedIntegrations: string[] | undefined;
+  let classifiedRoutes: string[] | undefined;
+  if (tsBinding) {
+    try {
+      const classifyRes = await tsBinding.fetch(new Request('https://internal/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intention }),
+        signal: AbortSignal.timeout(5_000),
+      }));
+      if (classifyRes.ok) {
+        const tsClassify = await classifyRes.json() as {
+          classification: { pattern: string; confidence: string };
+          traits: { verification: string; default_routes: string };
+          tier2_recommended: boolean;
+        };
+        if (!tsClassify.tier2_recommended) {
+          classifiedPattern = tsClassify.classification.pattern.toLowerCase().replace(/\s+/g, '-');
+          if (tsClassify.traits.verification !== 'none') {
+            classifiedIntegrations = [tsClassify.traits.verification];
+          }
+          if (tsClassify.traits.default_routes !== 'none') {
+            classifiedRoutes = tsClassify.traits.default_routes.split(',').map(r => r.trim());
+          }
+          if (result.facts) {
+            result.facts.classification_source = 'tarotscript';
+          }
+        }
+      }
+    } catch {
+      // /classify unavailable — engine runs its own Tier 3
+    }
+  }
+
   // Try engine templates (rich, stack-aware: real CRUD, migrations, auth)
   if (env.ENGINE) {
     try {
       const engineTier = auth.tier === 'pro' || auth.tier === 'enterprise' ? 'all' : 'blessed';
+      const engineReq: Record<string, unknown> = { description: intention, tier: engineTier };
+      if (classifiedPattern) engineReq.pattern = classifiedPattern;
+      if (classifiedRoutes) engineReq.routes = classifiedRoutes;
+      if (classifiedIntegrations) engineReq.integrations = classifiedIntegrations;
+
       const engineRes = await env.ENGINE.fetch(new Request('https://engine/scaffold', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Service-Binding': env.SERVICE_BINDING_SECRET,
         },
-        body: JSON.stringify({ description: intention, tier: engineTier }),
+        body: JSON.stringify(engineReq),
         signal: AbortSignal.timeout(10_000),
       }));
       if (engineRes.ok) {
